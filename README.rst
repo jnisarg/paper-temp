@@ -1,5 +1,4 @@
 
-```rst
 ===========================
 Paper [GTC-2024]
 ===========================
@@ -99,4 +98,3 @@ Contact
 ===========================
 
 For any questions or issues, please contact **Nisarg Joshi** at [nisargj1998@gmail.com].
-```
