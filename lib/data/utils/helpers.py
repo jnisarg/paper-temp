@@ -6,7 +6,7 @@ from lib.data.cityscapes import CityscapesDataset
 
 
 def build_dataloader(
-    config: Dict[str, Any],
+    # config: Dict[str, Any],
     train: bool = True,
     eval_mode: str = "val",
     logger: Optional[Any] = None,
@@ -25,18 +25,18 @@ def build_dataloader(
             Training and evaluation data loaders if train is True,
             otherwise only the evaluation data loader.
     """
-    data_config = config["data"]
-    training_config = config["training"]
-    num_gpus = len(config["gpus"])
+    # data_config = config["data"]
+    # training_config = config["training"]
+    # num_gpus = len(config["gpus"])
 
     dataset_kwargs: Dict[str, Any] = {
-        "root": data_config["root"],
-        "train_size": data_config["train_size"],
-        "val_size": data_config["val_size"],
-        "mean": data_config["mean"],
-        "std": data_config["std"],
-        "ignore_index": data_config["ignore_index"],
-        "bbox_format": data_config["bbox_format"],
+        "root": "data/cityscapes",
+        "train_size": [1024, 1024],
+        "val_size": [1024, 2048],
+        "mean": [0.485, 0.456, 0.406],
+        "std": [0.229, 0.224, 0.225],
+        "ignore_index": 255,
+        "bbox_format": "pascal_voc",
         "logger": logger,
     }
 
@@ -44,21 +44,23 @@ def build_dataloader(
         train_dataset = CityscapesDataset(split="train", **dataset_kwargs)
         train_dataloader = DataLoader(
             train_dataset,
-            batch_size=training_config["batch_size"] * num_gpus,
+            batch_size=4,
             shuffle=True,
-            num_workers=training_config["num_workers"],
+            num_workers=8,
             pin_memory=True,
             drop_last=True,
+            collate_fn=train_dataset.collate_fn,
         )
 
         eval_dataset = CityscapesDataset(split=eval_mode, **dataset_kwargs)
         eval_dataloader = DataLoader(
             eval_dataset,
-            batch_size=training_config["batch_size"] * num_gpus,
+            batch_size=1,
             shuffle=False,
-            num_workers=training_config["num_workers"],
+            num_workers=8,
             pin_memory=True,
             drop_last=False,
+            collate_fn=eval_dataset.collate_fn,
         )
 
         return train_dataloader, eval_dataloader
@@ -66,11 +68,12 @@ def build_dataloader(
     eval_dataset = CityscapesDataset(split=eval_mode, **dataset_kwargs)
     eval_dataloader = DataLoader(
         eval_dataset,
-        batch_size=training_config["batch_size"] * num_gpus,
+        batch_size=1,
         shuffle=False,
-        num_workers=training_config["num_workers"],
+        num_workers=8,
         pin_memory=True,
         drop_last=False,
+        collate_fn=eval_dataset.collate_fn,
     )
 
     return eval_dataloader

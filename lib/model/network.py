@@ -44,13 +44,18 @@ class Network(nn.Module):
         )
 
         self.centerness = CenternessHead(
-            in_channels=classification_classes,
+            in_channels=localization_classes,
             head_channels=head_channels,
             num_classes=localization_classes,
         )
 
+        # self.regressor = RegressionHead(
+        #     in_channels=self.backbone.out_channels[0],
+        #     head_channels=head_channels,
+        # )
+
         self.regressor = RegressionHead(
-            in_channels=self.backbone.out_channels[0],
+            in_channels=localization_classes,
             head_channels=head_channels,
         )
 
@@ -72,8 +77,19 @@ class Network(nn.Module):
         ppm, detail5, _ = self.backbone(input_tensor)
 
         classifier = self.classifier(ppm + detail5)
-        centerness = self.centerness(classifier)
-        regression = self.regressor(ppm + detail5)
+        centerness = self.centerness(
+            classifier[
+                :, self.classification_classes - self.localization_classes :, ...
+            ]
+        ).sigmoid()
+        # regression = self.regressor(ppm + detail5)
+        regression = self.regressor(
+            classifier[
+                :, self.classification_classes - self.localization_classes :, ...
+            ]
+        )
+
+        classifier = cm.Upsample(classifier, scale_factor=8)
 
         # Pass output through classification and localization heads
         return classifier, (centerness, regression)

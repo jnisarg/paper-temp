@@ -18,7 +18,13 @@ class ClassificationHead(nn.Module):
 
     """
 
-    def __init__(self, in_channels: int, head_channels: int, num_classes: int) -> None:
+    def __init__(
+        self,
+        in_channels: int,
+        head_channels: int,
+        num_classes: int,
+        scale_factor: int = 8,
+    ) -> None:
         """Initialize the module."""
         super().__init__()
 
@@ -27,6 +33,8 @@ class ClassificationHead(nn.Module):
             cm.BNReLUConv(head_channels, num_classes, kernel_size=1, bias=True),
         )
 
+        # self.scale_factor = scale_factor
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Forward pass.
@@ -38,12 +46,22 @@ class ClassificationHead(nn.Module):
             torch.Tensor: Output tensor.
 
         """
+
+        # if self.scale_factor is not None:
+        #     return cm.Upsample(self.classifier(x), scale_factor=self.scale_factor)
+
         return self.classifier(x)
 
 
 class CenternessHead(nn.Module):
 
-    def __init__(self, in_channels: int, head_channels: int, num_classes: int) -> None:
+    def __init__(
+        self,
+        in_channels: int,
+        head_channels: int,
+        num_classes: int,
+        scale_factor: int = 8,
+    ) -> None:
         """Initialize the module."""
         super().__init__()
 
@@ -52,6 +70,10 @@ class CenternessHead(nn.Module):
             cm.BNReLUConv(head_channels, num_classes, kernel_size=1, bias=True),
         )
 
+        self.centerness[-1][2].bias.data.fill_(-2.19)
+
+        self.scale_factor = scale_factor
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Forward pass.
@@ -63,6 +85,10 @@ class CenternessHead(nn.Module):
             torch.Tensor: Output tensor.
 
         """
+
+        if self.scale_factor is not None:
+            return cm.Upsample(self.centerness(x), scale_factor=self.scale_factor)
+
         return self.centerness(x)
 
 
@@ -79,14 +105,18 @@ class RegressionHead(nn.Module):
 
     """
 
-    def __init__(self, in_channels: int, head_channels: int) -> None:
+    def __init__(
+        self, in_channels: int, head_channels: int, scale_factor: int = 8
+    ) -> None:
         """Initialize the module."""
         super().__init__()
 
         self.regressor = nn.Sequential(
             cm.BNReLUConv(in_channels, head_channels, kernel_size=3),
-            cm.BNReLUConv(head_channels, 4, kernel_size=1, bias=True),
+            cm.BNReLUConv(head_channels, 2, kernel_size=1, bias=True),
         )
+
+        self.scale_factor = scale_factor
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -99,4 +129,8 @@ class RegressionHead(nn.Module):
             torch.Tensor: Output tensor.
 
         """
+
+        if self.scale_factor is not None:
+            return cm.Upsample(self.regressor(x), scale_factor=self.scale_factor)
+
         return self.regressor(x)

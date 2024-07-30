@@ -5,8 +5,97 @@ import albumentations as A
 import cv2
 import numpy as np
 import torch
+import torch.nn.functional as F
 from torch.utils.data import Dataset
 from torchvision import transforms
+
+
+def gaussian2D(shape: Tuple[int, int], sigma: float = 1) -> np.ndarray:
+    """
+    Generate a 2D Gaussian kernel.
+
+    Args:
+        shape (Tuple[int, int]): The shape of the kernel.
+        sigma (float): The standard deviation of the Gaussian distribution.
+
+    Returns:
+        np.ndarray: The 2D Gaussian kernel.
+    """
+    m, n = [(ss - 1.0) / 2.0 for ss in shape]
+    y, x = np.ogrid[-m : m + 1, -n : n + 1]
+    h = np.exp(-(x * x + y * y) / (2 * sigma * sigma))
+    h[h < np.finfo(h.dtype).eps * h.max()] = 0
+
+    return h
+
+
+def draw_umich_gaussian(
+    heatmap: np.ndarray, center: Tuple[float, float], radius: int, k: float = 1
+) -> np.ndarray:
+    """
+    Draw a 2D Gaussian kernel on a heatmap.
+
+    Args:
+        heatmap (np.ndarray): The heatmap to draw on.
+        center (Tuple[float, float]): The center of the Gaussian kernel.
+        radius (int): The radius of the Gaussian kernel.
+        k (float, optional): The scaling factor for the Gaussian kernel. Defaults to 1.
+
+    Returns:
+        np.ndarray: The updated heatmap with the Gaussian kernel drawn on it.
+    """
+    diameter = 2 * radius + 1
+    gaussian = gaussian2D((diameter, diameter), sigma=diameter / 6)
+
+    x, y = int(center[0]), int(center[1])
+
+    height, width = heatmap.shape[0:2]
+
+    left, right = min(x, radius), min(width - x, radius + 1)
+    top, bottom = min(y, radius), min(height - y, radius + 1)
+
+    masked_heatmap = heatmap[y - top : y + bottom, x - left : x + right]
+    masked_gaussian = gaussian[
+        radius - top : radius + bottom, radius - left : radius + right
+    ]
+    if min(masked_gaussian.shape) > 0 and min(masked_heatmap.shape) > 0:  # TODO: Debug
+        np.maximum(masked_heatmap, masked_gaussian * k, out=masked_heatmap)
+
+    return heatmap
+
+
+def gaussian_radius(det_size: Tuple[int, int], min_overlap: float = 0.7) -> float:
+    """
+    Calculate the radius of a 2D Gaussian kernel for a given detection size.
+
+    Args:
+        det_size (Tuple[int, int]): The size of the detection in (height, width).
+        min_overlap (float, optional): The minimum overlap between the kernel and the detection. Defaults to 0.7.
+
+    Returns:
+        float: The radius of the Gaussian kernel.
+    """
+    height, width = det_size
+
+    a1 = 1
+    b1 = height + width
+    c1 = width * height * (1 - min_overlap) / (1 + min_overlap)
+    sq1 = np.sqrt(b1**2 - 4 * a1 * c1)
+    r1 = (b1 + sq1) / 2
+
+    a2 = 4
+    b2 = 2 * (height + width)
+    c2 = (1 - min_overlap) * width * height
+    sq2 = np.sqrt(b2**2 - 4 * a2 * c2)
+    r2 = (b2 + sq2) / 2
+
+    a3 = 4 * min_overlap
+    b3 = -2 * min_overlap * (height + width)
+    c3 = (min_overlap - 1) * width * height
+    sq3 = np.sqrt(b3**2 - 4 * a3 * c3)
+    r3 = (b3 + sq3) / 2
+
+    return min(r1, r2, r3)
 
 
 class CityscapesDataset(Dataset):
@@ -83,23 +172,10 @@ class CityscapesDataset(Dataset):
         mean: Tuple[float, float, float],
         std: Tuple[float, float, float],
         ignore_index: int,
+        # down_stride: int = 8,
         bbox_format: str = "pascal_voc",
         logger: Optional[Any] = None,
     ) -> None:
-        """
-        Initialize the CityscapesDataset.
-
-        Args:
-            root (str): Root directory of the dataset.
-            split (str): Dataset split to use ('train', 'val', or 'test').
-            train_size (Tuple[int, int]): Size for training images.
-            val_size (Tuple[int, int]): Size for validation images.
-            mean (Tuple[float, float, float]): Mean for normalization.
-            std (Tuple[float, float, float]): Standard deviation for normalization.
-            ignore_index (int): Index to ignore in the mask.
-            bbox_format (str, optional): Format of bounding boxes. Defaults to 'pascal_voc'.
-            logger (Optional[Any], optional): Logger instance. Defaults to None.
-        """
         super().__init__()
 
         self.root = root
@@ -108,6 +184,7 @@ class CityscapesDataset(Dataset):
         self.mean = mean
         self.std = std
         self.ignore_index = ignore_index
+        # self.down_stride = down_stride
         self.bbox_format = bbox_format
         self.logger = logger
         self.mode = split
@@ -118,25 +195,9 @@ class CityscapesDataset(Dataset):
             self.samples = fr.read().splitlines()
 
     def __len__(self) -> int:
-        """
-        Return the number of samples in the dataset.
-
-        Returns:
-            int: Number of samples.
-        """
         return len(self.samples)
 
     def __getitem__(self, index: int) -> Dict[str, Union[torch.Tensor, Dict[str, Any]]]:
-        """
-        Get a sample from the dataset.
-
-        Args:
-            index (int): Index of the sample to retrieve.
-
-        Returns:
-            Dict[str, Union[torch.Tensor, Dict[str, Any]]]:
-                A dictionary containing the image, bounding boxes, labels, mask, and sample information.
-        """
         sample = self.samples[index]
         image_path, mask_path, bbox_path = sample.split()
 
@@ -151,54 +212,139 @@ class CityscapesDataset(Dataset):
 
         image, bboxes, labels, mask = self._transforms(image, bboxes, labels, mask)
 
+        infos["resize_height"], infos["resize_width"] = image.shape[:2]
+
+        bboxes = torch.from_numpy(np.array(bboxes)).float()
+
+        bboxes_w, bboxes_h = (
+            bboxes[..., 2] - bboxes[..., 0],
+            bboxes[..., 3] - bboxes[..., 1],
+        )
+
+        ct = np.array(
+            [
+                (bboxes[..., 0] + bboxes[..., 2]) / 2,
+                (bboxes[..., 1] + bboxes[..., 3]) / 2,
+            ],
+            dtype=np.float32,
+        ).T
+
         image = self._normalize_image(image)
-        bboxes = torch.tensor(bboxes, dtype=torch.float32)
         mask = torch.tensor(mask, dtype=torch.long)
         labels = torch.tensor(labels, dtype=torch.long)
 
-        return {
-            "image": image,
-            "bboxes": bboxes,
-            "labels": labels,
-            "mask": mask,
-            "info": infos,
-        }
+        # output_h, output_w = (
+        #     infos["resize_height"] // self.down_stride,
+        #     infos["resize_width"] // self.down_stride,
+        # )
+
+        # bboxes_h, bboxes_w, ct = (
+        #     bboxes_h / self.down_stride,
+        #     bboxes_w / self.down_stride,
+        #     ct / self.down_stride,
+        # )
+
+        heatmap = np.zeros(
+            (
+                len(self.LOCALIZATION_CLASSES),
+                infos["resize_height"],
+                infos["resize_width"],
+            ),
+            dtype=np.float32,
+        )
+
+        ct[:, 0] = np.clip(ct[:, 0], 0, infos["resize_width"] - 1)
+        ct[:, 1] = np.clip(ct[:, 1], 0, infos["resize_height"] - 1)
+
+        infos["gt_heatmap_height"], infos["gt_heatmap_width"] = (
+            infos["resize_height"],
+            infos["resize_width"],
+        )
+
+        object_mask = torch.ones(len(labels))
+
+        for idx, label in enumerate(labels):
+            radius = gaussian_radius((np.ceil(bboxes_h[idx]), np.ceil(bboxes_w[idx])))
+            radius = max(0, int(radius))
+            ct_int = ct[idx].astype(np.int32)
+
+            if (heatmap[:, ct_int[1], ct_int[0]] == 1).sum() >= 1.0:
+                object_mask[idx] = 0
+                continue
+
+            draw_umich_gaussian(heatmap[label], ct_int, radius)
+
+            if heatmap[label, ct_int[1], ct_int[0]] != 1:
+                object_mask[idx] = 0
+
+        heatmap = torch.from_numpy(heatmap)
+
+        object_mask = object_mask.eq(1)
+        bboxes = bboxes[object_mask]
+        labels = labels[object_mask]
+
+        infos["ct"] = torch.tensor(ct)[object_mask]
+        infos["object_mask"] = object_mask
+
+        assert heatmap.eq(1).sum().item() == len(labels) == len(infos["ct"])
+
+        bboxes = torch.tensor(bboxes, dtype=torch.float32)
+
+        return image, bboxes, labels, mask, heatmap, infos
+
+    def collate_fn(self, batch):
+        images, bboxes, labels, masks, heatmaps, infos = zip(*batch)
+
+        assert len(images) == len(bboxes) == len(labels)
+
+        images_list = []
+        bboxes_list = []
+        labels_list = []
+        hms_list = []
+        masks_list = []
+
+        max_num = 0
+        for idx in range(len(images)):
+            images_list.append(images[idx])
+            hms_list.append(heatmaps[idx])
+            masks_list.append(masks[idx])
+
+            n = bboxes[idx].shape[0]
+            if n > max_num:
+                max_num = n
+
+        for idx in range(len(images)):
+            bboxes_list.append(
+                F.pad(
+                    bboxes[idx],
+                    (0, 0, 0, max_num - bboxes[idx].shape[0]),
+                    value=-1,
+                )
+            )
+            labels_list.append(
+                F.pad(
+                    labels[idx],
+                    (0, max_num - labels[idx].shape[0]),
+                    value=-1,
+                )
+            )
+
+        images = torch.stack(images_list)
+        bboxes = torch.stack(bboxes_list)
+        labels = torch.stack(labels_list)
+        heatmaps = torch.stack(hms_list)
+        masks = torch.stack(masks_list)
+
+        return images, bboxes, labels, heatmaps, masks, infos
 
     def _load_image(self, image_path: str) -> np.ndarray:
-        """
-        Load an image from a given path.
-
-        Args:
-            image_path (str): Path to the image file.
-
-        Returns:
-            np.ndarray: Loaded image.
-        """
         image = cv2.imread(os.path.join(self.root, image_path))
         return cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
     def _load_mask(self, mask_path: str) -> np.ndarray:
-        """
-        Load a mask from a given path.
-
-        Args:
-            mask_path (str): Path to the mask file.
-
-        Returns:
-            np.ndarray: Loaded mask.
-        """
         return cv2.imread(os.path.join(self.root, mask_path), cv2.IMREAD_GRAYSCALE)
 
     def _parse_labels(self, bbox_path: str) -> Tuple[List[List[int]], List[int]]:
-        """
-        Parse bounding boxes and labels from a file.
-
-        Args:
-            bbox_path (str): Path to the bounding boxes file.
-
-        Returns:
-            Tuple[List[List[int]], List[int]]: List of bounding boxes and list of labels.
-        """
         with open(os.path.join(self.root, bbox_path), "r", encoding="utf-8") as fr:
             lines = fr.read().splitlines()
 
@@ -217,19 +363,6 @@ class CityscapesDataset(Dataset):
         labels: List[int],
         mask: np.ndarray,
     ) -> Tuple[np.ndarray, List[List[int]], List[int], np.ndarray]:
-        """
-        Apply transformations to the image, bounding boxes, labels, and mask.
-
-        Args:
-            image (np.ndarray): Input image.
-            bboxes (List[List[int]]): List of bounding boxes.
-            labels (List[int]): List of labels.
-            mask (np.ndarray): Input mask.
-
-        Returns:
-            Tuple[np.ndarray, List[List[int]], List[int], np.ndarray]:
-                Transformed image, bounding boxes, labels, and mask.
-        """
         transform = self._get_transform()
         transformed = transform(image=image, bboxes=bboxes, labels=labels, mask=mask)
 
@@ -243,16 +376,13 @@ class CityscapesDataset(Dataset):
         return image, bboxes, labels, mask
 
     def _get_transform(self) -> A.Compose:
-        """
-        Get the transformation pipeline based on the mode (train/val).
-
-        Returns:
-            A.Compose: Transformation pipeline.
-        """
         if self.mode == "train":
             return A.Compose(
                 [
-                    A.RandomResizedCrop(
+                    # A.RandomResizedCrop(
+                    #     height=self.train_size[0], width=self.train_size[1]
+                    # ),
+                    A.RandomSizedBBoxSafeCrop(
                         height=self.train_size[0], width=self.train_size[1]
                     ),
                     A.HorizontalFlip(p=0.5),
@@ -286,40 +416,16 @@ class CityscapesDataset(Dataset):
         )
 
     def _normalize_image(self, image: np.ndarray) -> torch.Tensor:
-        """
-        Normalize the image.
-
-        Args:
-            image (np.ndarray): Input image.
-
-        Returns:
-            torch.Tensor: Normalized image.
-        """
         image = transforms.ToTensor()(image)
         return transforms.Normalize(mean=self.mean, std=self.std)(image)
 
     def _map_mask(self, mask: np.ndarray) -> np.ndarray:
-        """
-        Map mask values to new values.
-
-        Args:
-            mask (np.ndarray): Input mask.
-
-        Returns:
-            np.ndarray: Mapped mask.
-        """
         temp = mask.copy()
         for k, v in self._get_mask_mapping().items():
             mask[temp == k] = v
         return mask
 
     def _get_mask_mapping(self) -> Dict[int, int]:
-        """
-        Get the mapping of mask values to new values.
-
-        Returns:
-            Dict[int, int]: Mapping of old mask values to new values.
-        """
         return {
             -1: self.ignore_index,
             0: self.ignore_index,
