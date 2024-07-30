@@ -41,6 +41,31 @@ class ClassificationHead(nn.Module):
         return self.classifier(x)
 
 
+class CenternessHead(nn.Module):
+
+    def __init__(self, in_channels: int, head_channels: int, num_classes: int) -> None:
+        """Initialize the module."""
+        super().__init__()
+
+        self.centerness = nn.Sequential(
+            cm.BNReLUConv(in_channels, head_channels, kernel_size=3),
+            cm.BNReLUConv(head_channels, num_classes, kernel_size=1, bias=True),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass.
+
+        Args:
+            x (torch.Tensor): Input tensor.
+
+        Returns:
+            torch.Tensor: Output tensor.
+
+        """
+        return self.centerness(x)
+
+
 class RegressionHead(nn.Module):
     """
     Module for regression head.

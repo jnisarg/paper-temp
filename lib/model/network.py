@@ -3,7 +3,7 @@ from torch import nn
 
 from lib.model.modules import common as cm
 from lib.model.backbones.ddrnet import DDRNet
-from lib.model.modules.head import ClassificationHead, RegressionHead
+from lib.model.modules.head import ClassificationHead, CenternessHead, RegressionHead
 
 
 class Network(nn.Module):
@@ -42,6 +42,13 @@ class Network(nn.Module):
             head_channels=head_channels,
             num_classes=classification_classes,
         )
+
+        self.centerness = CenternessHead(
+            in_channels=classification_classes,
+            head_channels=head_channels,
+            num_classes=localization_classes,
+        )
+
         self.regressor = RegressionHead(
             in_channels=self.backbone.out_channels[0],
             head_channels=head_channels,
@@ -64,8 +71,12 @@ class Network(nn.Module):
         # Pass input through backbone network
         ppm, detail5, _ = self.backbone(input_tensor)
 
+        classifier = self.classifier(ppm + detail5)
+        centerness = self.centerness(classifier)
+        regression = self.regressor(ppm + detail5)
+
         # Pass output through classification and localization heads
-        return self.classifier(ppm + detail5), self.regressor(ppm + detail5)
+        return classifier, (centerness, regression)
 
 
 if __name__ == "__main__":
@@ -85,7 +96,7 @@ if __name__ == "__main__":
     out = model(x)
 
     print(
-        f"Classification output shape: {out[0].shape}, Localization output shape: {out[1].shape}"
+        f"Classification output shape: {out[0].shape}, Localization output shape: (Centerness: {out[1][0].shape}, Regression: {out[1][1].shape})"
     )
 
     parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
