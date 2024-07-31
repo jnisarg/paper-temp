@@ -7,7 +7,8 @@ import warnings
 import torch
 import torch.cuda.amp as amp
 
-# import torch.nn as nn
+import torch.nn as nn
+
 # import yaml
 
 from lib.core.functions import save_snapshot, train_one_epoch, validate
@@ -35,9 +36,9 @@ def train():
     amp_scaler = amp.GradScaler(enabled=True)
 
     # if len(config["gpus"]) > 1:
-    #     model = nn.DataParallel(model, device_ids=range(len(config["gpus"])))
-    #     if config["train"]["sync_bn"]:
-    #         model = nn.SyncBatchNorm.convert_sync_batchnorm(model)
+    # model = nn.DataParallel(model, device_ids=[0, 1, 2, 3])
+    # if config["train"]["sync_bn"]:
+    # model = nn.SyncBatchNorm.convert_sync_batchnorm(model)
 
     model.cuda()
 

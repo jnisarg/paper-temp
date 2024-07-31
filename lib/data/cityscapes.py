@@ -212,6 +212,12 @@ class CityscapesDataset(Dataset):
 
         image, bboxes, labels, mask = self._transforms(image, bboxes, labels, mask)
 
+        if not bboxes:
+            if self.mode == "val":
+                print(f"Skip image (after): {image_path}")
+            image, bboxes, labels, mask, heatmap, infos = self.__getitem__(index)
+            return image, bboxes, labels, mask, heatmap, infos
+
         infos["resize_height"], infos["resize_width"] = image.shape[:2]
 
         bboxes = torch.from_numpy(np.array(bboxes)).float()
@@ -350,7 +356,7 @@ class CityscapesDataset(Dataset):
 
         bboxes, labels = [], []
         for line in lines:
-            label_id, x1, y1, x2, y2 = map(int, line.split())
+            label_id, x1, x2, y1, y2 = map(int, line.split())
             bboxes.append([x1, y1, x2, y2])
             labels.append(label_id)
 
@@ -379,10 +385,7 @@ class CityscapesDataset(Dataset):
         if self.mode == "train":
             return A.Compose(
                 [
-                    # A.RandomResizedCrop(
-                    #     height=self.train_size[0], width=self.train_size[1]
-                    # ),
-                    A.RandomSizedBBoxSafeCrop(
+                    A.RandomResizedCrop(
                         height=self.train_size[0], width=self.train_size[1]
                     ),
                     A.HorizontalFlip(p=0.5),
@@ -397,8 +400,8 @@ class CityscapesDataset(Dataset):
                 ],
                 bbox_params=A.BboxParams(
                     format=self.bbox_format,
-                    min_visibility=0.7,
-                    min_area=2000,
+                    # min_visibility=0.7,
+                    # min_area=2000,
                     label_fields=["labels"],
                 ),
             )
@@ -410,7 +413,7 @@ class CityscapesDataset(Dataset):
             bbox_params=A.BboxParams(
                 format=self.bbox_format,
                 min_visibility=0.7,
-                min_area=2000,
+                min_area=1500,
                 label_fields=["labels"],
             ),
         )

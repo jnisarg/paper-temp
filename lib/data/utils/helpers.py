@@ -44,7 +44,7 @@ def build_dataloader(
         train_dataset = CityscapesDataset(split="train", **dataset_kwargs)
         train_dataloader = DataLoader(
             train_dataset,
-            batch_size=4,
+            batch_size=8,
             shuffle=True,
             num_workers=8,
             pin_memory=True,

@@ -26,9 +26,18 @@ class FullModel(nn.Module):
         preds = self.model(images)
 
         pixel_accuracy = self._pixel_accuracy(preds[0], masks)
-        classification_loss, localization_loss = self.criterion(preds, targets)
+        classification_loss, localization_loss, centerness_loss, bbox_loss = (
+            self.criterion(preds, targets)
+        )
 
-        return preds, pixel_accuracy, classification_loss, localization_loss
+        return (
+            preds,
+            pixel_accuracy,
+            classification_loss,
+            localization_loss,
+            centerness_loss,
+            bbox_loss,
+        )
 
 
 def build_model():

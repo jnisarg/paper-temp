@@ -1,0 +1,7 @@
+{
+    "restructuredtext.pythonRecommendation.disabled": true,
+    "[markdown]": {
+        "editor.wordWrap": "off"
+    },
+    "editor.wordWrap": "off"
+}

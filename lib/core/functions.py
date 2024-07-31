@@ -96,8 +96,10 @@ def train_one_epoch(
         loss_value,
         classification_loss_value,
         localization_loss_value,
+        centerness_loss_value,
+        bbox_loss_value,
         pixel_accuracy_value,
-    ) = (SmoothedValue(fmt="{avg:.4f}") for _ in range(4))
+    ) = (SmoothedValue(fmt="{avg:.4f}") for _ in range(6))
 
     for batch_id, (targets) in enumerate(dataloader):
         data_time.update(time.time() - end)
@@ -117,13 +119,30 @@ def train_one_epoch(
 
         with amp.autocast(enabled=amp_enabled):
             # Forward pass
-            _, pixel_accuracy, classification_loss, localization_loss = model(targets)
+            (
+                _,
+                pixel_accuracy,
+                classification_loss,
+                localization_loss,
+                centerness_loss,
+                bbox_loss,
+            ) = model(targets)
 
             # Compute mean loss
-            loss = (classification_loss + localization_loss).mean()
+            # if epoch < 50:
+            #     loss = (classification_loss + 0.1 * localization_loss).mean()
+            # elif epoch < 100:
+            #     loss = (classification_loss + 0.2 * localization_loss).mean()
+            # else:
+            #     loss = (classification_loss + 0.5 * localization_loss).mean()
+            pixel_accuracy = pixel_accuracy.mean()
+            loss = (
+                classification_loss + pixel_accuracy.item() * localization_loss
+            ).mean()
             localization_loss = localization_loss.mean()
             classification_loss = classification_loss.mean()
-            pixel_accuracy = pixel_accuracy.mean()
+            centerness_loss = centerness_loss.mean()
+            bbox_loss = bbox_loss.mean()
 
         # Backpropagation with AMP
         amp_scaler.scale(loss).backward()
@@ -135,6 +154,8 @@ def train_one_epoch(
         classification_loss_value.update(classification_loss.item())
         localization_loss_value.update(localization_loss.item())
         pixel_accuracy_value.update(pixel_accuracy.item())
+        centerness_loss_value.update(centerness_loss.item())
+        bbox_loss_value.update(bbox_loss.item())
 
         iter_time.update(time.time() - end)
         end = time.time()
@@ -144,7 +165,7 @@ def train_one_epoch(
             logger.info(
                 f"Epoch [{epoch}][{batch_id}/{len(dataloader)}]\t"
                 f"LR {optimizer.param_groups[0]['lr']:.4e}\t"
-                f"Loss {loss_value} (classification_loss {classification_loss_value}, localization_loss {localization_loss_value}, pixel_accuracy {pixel_accuracy_value})\t"  # , grad {grad_value})\t"
+                f"Loss {loss_value} (classification_loss {classification_loss_value}, localization_loss {localization_loss_value} (centerness_loss {centerness_loss_value}, bbox_loss {bbox_loss_value}), pixel_accuracy {pixel_accuracy_value})\t"  # , grad {grad_value})\t"
                 f"Time {iter_time} (data {data_time}, eta {datetime.timedelta(seconds=int(iter_time.avg * (len(dataloader) - batch_id - 1)))})\t"
             )
 
@@ -162,6 +183,16 @@ def train_one_epoch(
                     cur_iter + batch_id - 1,
                 )
                 writer.add_scalar(
+                    "train/centerness_loss",
+                    centerness_loss_value.avg,
+                    cur_iter + batch_id - 1,
+                )
+                writer.add_scalar(
+                    "train/bbox_loss",
+                    bbox_loss_value.avg,
+                    cur_iter + batch_id - 1,
+                )
+                writer.add_scalar(
                     "train/pixel_accuarcy",
                     pixel_accuracy_value.avg,
                     cur_iter + batch_id - 1,
@@ -175,6 +206,8 @@ def train_one_epoch(
         "classification_loss": classification_loss_value.avg,
         "localization_loss": localization_loss_value.avg,
         "pixel_accuracy": pixel_accuracy_value.avg,
+        "centerness_loss": centerness_loss_value.avg,
+        "bbox_loss": bbox_loss_value.avg,
     }
 
     # Save model snapshot if work_dir is provided
@@ -193,7 +226,9 @@ def validate(epoch: int, model, dataloader, logger, writer):
         classification_loss_value,
         localization_loss_value,
         pixel_accuracy_value,
-    ) = (SmoothedValue(fmt="{avg:.4f}") for _ in range(4))
+        centerness_loss_value,
+        bbox_loss_value,
+    ) = (SmoothedValue(fmt="{avg:.4f}") for _ in range(6))
 
     metrics = Metrics(
         len(dataloader.dataset.CLASSIFICATION_CLASSES),
@@ -223,21 +258,36 @@ def validate(epoch: int, model, dataloader, logger, writer):
                 for target in targets
             ]
 
-            preds, pixel_accuracy, classification_loss, localization_loss = model(
-                targets
-            )
+            (
+                preds,
+                pixel_accuracy,
+                classification_loss,
+                localization_loss,
+                centerness_loss,
+                bbox_loss,
+            ) = model(targets)
 
-            loss = (classification_loss + localization_loss).mean()
+            # if epoch < 50:
+            #     loss = (classification_loss + 0.1 * localization_loss).mean()
+            # elif epoch < 100:
+            #     loss = (classification_loss + 0.2 * localization_loss).mean()
+            # else:
+            #     loss = (classification_loss + 0.5 * localization_loss).mean()
+            loss = (
+                classification_loss + pixel_accuracy.item() * localization_loss
+            ).mean()
             localization_loss = localization_loss.mean()
             classification_loss = classification_loss.mean()
             pixel_accuracy = pixel_accuracy.mean()
+            centerness_loss = centerness_loss.mean()
+            bbox_loss = bbox_loss.mean()
 
             loss_value.update(loss.item())
             classification_loss_value.update(classification_loss.item())
             localization_loss_value.update(localization_loss.item())
             pixel_accuracy_value.update(pixel_accuracy.item())
 
-            metrics.update(preds[0], targets["mask"])
+            metrics.update(preds[0], targets[4])
 
             pbar.set_postfix(
                 loss=loss_value.avg,
@@ -254,6 +304,8 @@ def validate(epoch: int, model, dataloader, logger, writer):
             "train/classification_loss", classification_loss_value.avg, epoch
         )
         writer.add_scalar("train/localization_loss", localization_loss_value.avg, epoch)
+        writer.add_scalar("train/centerness_loss", centerness_loss_value.avg, epoch)
+        writer.add_scalar("train/bbox_loss", bbox_loss_value.avg, epoch)
         writer.add_scalar("val/pixel_accuracy", pixel_accuracy_value.avg, epoch)
         writer.add_scalar("val/miou", miou, epoch)
 
@@ -267,6 +319,8 @@ def validate(epoch: int, model, dataloader, logger, writer):
         "loss": loss_value.avg,
         "classification_loss": classification_loss_value.avg,
         "localization_loss": localization_loss_value.avg,
+        "centerness_loss": centerness_loss_value.avg,
+        "bbox_loss": bbox_loss_value.avg,
         "pixel_accuracy": pixel_accuracy_value.avg,
         "miou": miou,
     }

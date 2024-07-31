@@ -18,7 +18,6 @@ class Metrics:
         self.missing_val = missing_val
         self.ignore_index = ignore_index
         self.eps = eps
-        self.line_iou = 0.0
         self.reset()
 
     def reset(self):
@@ -53,8 +52,6 @@ class Metrics:
         iou = TP / (TP + FP + FN + self.eps)
 
         class_weight = self.confusion_matrix.sum(1) / self.confusion_matrix.sum()
-
-        self.line_iou = iou[self.class_names.index("line")].item()
 
         self.metrics.update(
             {

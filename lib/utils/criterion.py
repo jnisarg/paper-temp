@@ -123,8 +123,8 @@ class Criterion(nn.Module):
         # print(pred[1][0], heatmaps)
         # exit()
 
-        localization_loss = (
-            centerness_loss + (regression_loss / (num + self.eps))
-        ) * self.localization_weight
+        bbox_loss = regression_loss / (num + self.eps) * 0.1
 
-        return classification_loss, localization_loss
+        localization_loss = (centerness_loss + bbox_loss) * self.localization_weight
+
+        return classification_loss, localization_loss, centerness_loss, bbox_loss
