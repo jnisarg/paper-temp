@@ -287,7 +287,9 @@ def validate(epoch: int, model, dataloader, logger, writer):
             localization_loss_value.update(localization_loss.item())
             pixel_accuracy_value.update(pixel_accuracy.item())
 
-            metrics.update(preds[0], targets[4])
+            # metrics.update(preds[0], targets[4])
+            metrics.update(preds, targets)
+
 
             pbar.set_postfix(
                 loss=loss_value.avg,
@@ -308,6 +310,9 @@ def validate(epoch: int, model, dataloader, logger, writer):
         writer.add_scalar("train/bbox_loss", bbox_loss_value.avg, epoch)
         writer.add_scalar("val/pixel_accuracy", pixel_accuracy_value.avg, epoch)
         writer.add_scalar("val/miou", miou, epoch)
+        writer.add_scalar("val/mAP", metrics.metrics["mAP"], epoch),
+        writer.add_scalar("val/mAP_50", metrics.metrics["mAP_50"], epoch),
+        writer.add_scalar("val/mAP_75", metrics.metrics["mAP_75"], epoch)
 
         # writer.add_figure(
         #     "val/activations", get_figure(pred[0], pred[1], targets[1]), epoch
@@ -323,4 +328,7 @@ def validate(epoch: int, model, dataloader, logger, writer):
         "bbox_loss": bbox_loss_value.avg,
         "pixel_accuracy": pixel_accuracy_value.avg,
         "miou": miou,
+        "mAP":metrics.metrics["mAP"],
+        "mAP_50":metrics.metrics["mAP_50"],
+        "mAP_75":metrics.metrics["mAP_75"],
     }

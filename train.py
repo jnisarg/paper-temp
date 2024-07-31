@@ -73,6 +73,8 @@ def train():
     epoch_time = SmoothedValue(fmt="{avg:.4f}")
 
     for epoch in range(484):
+        # val_stats = validate(epoch, model, test_dl, logger, writer)
+
         train_stats = train_one_epoch(
             epoch,
             model,
@@ -90,8 +92,8 @@ def train():
         if epoch % 5 == 0 or epoch > 484 - 10:
             val_stats = validate(epoch, model, test_dl, logger, writer)
 
-            if val_stats["miou"] >= best_score:
-                best_score = val_stats["miou"]
+            if val_stats["miou"] + val_stats["mAP"] >= best_score:
+                best_score = val_stats["miou"]+ val_stats["mAP"]
                 save_snapshot(
                     epoch,
                     model,

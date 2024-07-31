@@ -1,5 +1,6 @@
 import torch
 from tabulate import tabulate
+from torchmetrics.detection.mean_ap import MeanAveragePrecision
 
 
 class Metrics:
@@ -24,12 +25,27 @@ class Metrics:
         self.confusion_matrix = torch.zeros(
             self.num_classes, self.num_classes, dtype=torch.int64
         ).cuda()
+        self.mAP= MeanAveragePrecision(iou_type="bbox").cuda()
         self.metrics = {}
 
     def update(self, pred, target):
-        pred, target = self.prepare_input(pred, target)
+        #for OD metrics
+        target_od= {}
+        target_od['boxes']= target[1][0]
+        target_od['labels']= target[2][0]
+        target_od= [target_od]
+        pred_od= [{
+            'boxes': torch.tensor([[258.0, 41.0, 606.0, 285.0]]).cuda(),
+            'scores': torch.tensor([0.536]).cuda(),
+            'labels': torch.tensor([0]).cuda()
+        }] #replace this with actual predictions
+        self.mAP.update(pred_od, target_od)
+
+
+        #for SD Metrics
+        pred_sd, target_sd = self.prepare_input(pred[0], target[4])
         self.confusion_matrix += torch.bincount(
-            self.num_classes * target + pred, minlength=self.num_classes**2
+            self.num_classes * target_sd + pred_sd, minlength=self.num_classes**2
         ).view(self.num_classes, self.num_classes)
 
     def prepare_input(self, pred, target):
@@ -60,6 +76,10 @@ class Metrics:
                 "precision": precision,
                 "recall": recall,
                 "f1_score": f1_score,
+                "mAP": self.mAP.compute()['map'].item(),
+                "mAP_50": self.mAP.compute()['map_50'].item(),
+                "mAP_75": self.mAP.compute()['map_75'].item()
+
             }
         )
 
@@ -78,7 +98,7 @@ class Metrics:
                             if field != "class_weight"
                             else f"{metrics[field][idx]:.6f}"
                         )
-                        for field in metrics
+                        for field in list(metrics.keys())[:-3]
                     ],
                 ]
             )
@@ -92,7 +112,7 @@ class Metrics:
                         if field != "class_weight"
                         else None
                     )
-                    for field in metrics
+                    for field in list(metrics.keys())[:-3]
                 ],
             ]
         )
