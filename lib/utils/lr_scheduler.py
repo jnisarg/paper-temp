@@ -61,7 +61,7 @@ class WarmupPolyLR(WarmupLR):
         optimizer,
         power,
         max_iter,
-        warmup_iter=500,
+        warmup_iter=100,
         warmup_ratio=5e-4,
         warmup="exp",
         last_epoch=-1,

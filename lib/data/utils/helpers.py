@@ -2,12 +2,13 @@ from typing import Any, Dict, Optional, Tuple, Union
 
 from torch.utils.data import DataLoader
 
-from lib.data.cityscapes import CityscapesDataset
+from lib.data.cityscapes import CityscapesPixelClassificationDataset, CityscapesLocalizationDataset
 
 
 def build_dataloader(
     # config: Dict[str, Any],
     train: bool = True,
+    dataset: Union[CityscapesPixelClassificationDataset, CityscapesLocalizationDataset] = None,
     eval_mode: str = "val",
     logger: Optional[Any] = None,
 ) -> Union[Tuple[DataLoader, DataLoader], DataLoader]:
@@ -41,7 +42,7 @@ def build_dataloader(
     }
 
     if train:
-        train_dataset = CityscapesDataset(split="train", **dataset_kwargs)
+        train_dataset = dataset(split="train", **dataset_kwargs)
         train_dataloader = DataLoader(
             train_dataset,
             batch_size=8,
@@ -52,7 +53,7 @@ def build_dataloader(
             collate_fn=train_dataset.collate_fn,
         )
 
-        eval_dataset = CityscapesDataset(split=eval_mode, **dataset_kwargs)
+        eval_dataset = dataset(split=eval_mode, **dataset_kwargs)
         eval_dataloader = DataLoader(
             eval_dataset,
             batch_size=1,
@@ -65,7 +66,7 @@ def build_dataloader(
 
         return train_dataloader, eval_dataloader
 
-    eval_dataset = CityscapesDataset(split=eval_mode, **dataset_kwargs)
+    eval_dataset = dataset(split=eval_mode, **dataset_kwargs)
     eval_dataloader = DataLoader(
         eval_dataset,
         batch_size=1,

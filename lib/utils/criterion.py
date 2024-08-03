@@ -3,6 +3,120 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+class PixelClassificationCriterion(nn.Module):
+
+    def __init__(self, ohem_thresh=0.7, n_min_divisor=16, ignore_index=255):
+        super().__init__()
+
+        self.ohem_thresh = -torch.log(torch.tensor(ohem_thresh, dtype=torch.float))
+        self.n_min_divisor = n_min_divisor
+
+        self.ignore_index = ignore_index
+
+    def _ohem_loss(self, pred, target):
+        n_min = target[target != self.ignore_index].numel() // self.n_min_divisor
+
+        loss = F.cross_entropy(
+            pred, target, ignore_index=self.ignore_index, reduction="none"
+        ).view(-1)
+
+        loss_hard = loss[loss > self.ohem_thresh]
+
+        if loss_hard.numel() < n_min:
+            loss_hard, _ = loss.topk(n_min)
+
+        return loss_hard.mean()
+
+    def forward(self, pred, target):
+        pred_main, pred_aux = pred
+
+        pred_main = F.interpolate(
+            pred_main, scale_factor=8, mode="bilinear", align_corners=False
+        )
+
+        return self._ohem_loss(pred_main, target[1]) + 0.4 * self._ohem_loss(
+            pred_aux, target[1]
+        )
+
+
+class LocalizationCriterion(nn.Module):
+
+    def __init__(self, alpha=2, gamma=4, box_loss="l1_loss", eps=1e-7):
+        super().__init__()
+
+        assert box_loss in ["l1_loss", "smooth_l1_loss"]
+
+        self.alpha = alpha
+        self.gamma = gamma
+        self.box_loss = eval("F." + box_loss)
+        self.eps = eps
+
+    def _focal_loss(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        positive_indices = target.eq(1).float()
+        negative_indices = target.lt(1).float()
+
+        negative_weights = torch.pow(1 - target, 4)
+        pred = torch.clamp(pred, torch.finfo(pred.dtype).tiny)
+
+        positive_loss = torch.log(pred) * torch.pow(1 - pred, 2) * positive_indices
+        negative_loss = torch.log(1 - pred + torch.finfo(pred.dtype).tiny)
+        negative_loss = (
+            negative_loss * torch.pow(pred, 2) * negative_weights * negative_indices
+        )
+
+        num_positive = torch.sum(positive_indices)
+        positive_loss = positive_loss.sum()
+        negative_loss = negative_loss.sum()
+        # print(
+        #     positive_loss.item(),
+        #     negative_loss.item(),
+        #     (1 - pred + torch.finfo(pred.dtype).tiny).min().item(),
+        #     (1 - pred + torch.finfo(pred.dtype).tiny).max().item(),
+        #     pred.min().item(),
+        #     pred.max().item(),
+        #     num_positive.item(),
+        # )
+
+        if num_positive == 0:
+            loss = -negative_loss
+        else:
+            loss = -(positive_loss + negative_loss) / num_positive
+
+        return loss
+
+    def forward(self, pred, target):
+        images, _, bboxes, labels, heatmaps, infos = target
+
+        target_nonpad_mask = labels.gt(-1)
+
+        centerness_loss = self._focal_loss(pred[1], heatmaps)
+        regression_loss = centerness_loss.new_tensor(0.0)
+
+        num = 0
+        for batch in range(images.size(0)):
+            ct = infos[batch]["bbox_centers"].cuda()
+            ct_int = ct.long()
+            num += len(ct_int)
+
+            batch_regression_pred = pred[2][batch, :, ct_int[:, 1], ct_int[:, 0]].view(
+                -1
+            )
+            batch_bboxes = bboxes[batch][target_nonpad_mask[batch]]
+
+            wh = torch.stack(
+                [
+                    batch_bboxes[:, 2] - batch_bboxes[:, 0],
+                    batch_bboxes[:, 3] - batch_bboxes[:, 1],
+                ]
+            ).view(-1)
+
+            regression_loss += self.box_loss(batch_regression_pred, wh, reduction="sum")
+
+        bbox_loss = regression_loss / (num + self.eps) * 0.1
+
+        return centerness_loss + bbox_loss, (centerness_loss, bbox_loss)
+
+
 class Criterion(nn.Module):
     def __init__(
         self,
@@ -72,6 +186,8 @@ class Criterion(nn.Module):
         #     negative_loss.item(),
         #     (1 - pred + torch.finfo(pred.dtype).tiny).min().item(),
         #     (1 - pred + torch.finfo(pred.dtype).tiny).max().item(),
+        #     pred.min().item(),
+        #     pred.max().item(),
         #     num_positive.item(),
         # )
 

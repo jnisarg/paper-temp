@@ -33,7 +33,7 @@ class ClassificationHead(nn.Module):
             cm.BNReLUConv(head_channels, num_classes, kernel_size=1, bias=True),
         )
 
-        # self.scale_factor = scale_factor
+        self.scale_factor = scale_factor
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -47,8 +47,8 @@ class ClassificationHead(nn.Module):
 
         """
 
-        # if self.scale_factor is not None:
-        #     return cm.Upsample(self.classifier(x), scale_factor=self.scale_factor)
+        if self.scale_factor is not None:
+            return cm.Upsample(self.classifier(x), scale_factor=self.scale_factor)
 
         return self.classifier(x)
 
@@ -70,7 +70,7 @@ class CenternessHead(nn.Module):
             cm.BNReLUConv(head_channels, num_classes, kernel_size=1, bias=True),
         )
 
-        self.centerness[-1][2].bias.data.fill_(-2.19)
+        # self.centerness[-1][2].bias.data.fill_(-2.19)
 
         self.scale_factor = scale_factor
 

@@ -2,6 +2,7 @@ import torch
 from torch import nn
 
 from lib.model.modules import common as cm
+from lib.model.modules.head import ClassificationHead
 
 
 class DAPPM(nn.Module):
@@ -284,6 +285,8 @@ class DDRNet(nn.Module):
         self.compression3 = cm.ConvBNReLU(planes * 4, planes * 2, 1, 1)
         self.compression4 = cm.ConvBNReLU(planes * 8, planes * 2, 1, 1)
 
+        self.aux = ClassificationHead(planes * 2, planes * 2, 19)
+
         # Detail Branch Layers
         self.detail3 = self._make_layer(cm.BasicBlock, planes * 2, planes * 2, 2, 1)
         self.detail4 = self._make_layer(cm.BasicBlock, planes * 2, planes * 2, 1, 1)
@@ -359,6 +362,8 @@ class DDRNet(nn.Module):
         down3 = context3 + self.down3(detail3)
         compression3 = detail3 + cm.Upsample(self.compression3(context3), scale_factor=2)
 
+        aux = self.aux(compression3)
+
         context4 = self.context4(down3)
         detail4 = self.detail4(compression3)
 
@@ -370,4 +375,4 @@ class DDRNet(nn.Module):
 
         ppm = cm.Upsample(self.ppm(context5), scale_factor=8)
 
-        return ppm, detail5, (compression3, compression4)
+        return ppm, detail5, (compression3, compression4), aux

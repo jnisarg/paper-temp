@@ -1,9 +1,126 @@
 import torch
 from torch import nn
+import torch.nn.functional as F
 
 from lib.model.modules import common as cm
 from lib.model.backbones.ddrnet import DDRNet
 from lib.model.modules.head import ClassificationHead, CenternessHead, RegressionHead
+
+
+class PixelClassificationModel(nn.Module):
+
+    def __init__(self, classification_classes, head_channels, ppm_block="dappm"):
+        super().__init__()
+
+        self.head_channels = head_channels
+        self.classification_classes = classification_classes
+
+        self.backbone = DDRNet(ppm_block=ppm_block, planes=32, ppm_planes=128)
+
+        self.classifier = ClassificationHead(
+            in_channels=self.backbone.out_channels[0],
+            head_channels=head_channels,
+            num_classes=classification_classes,
+            scale_factor=None,
+        )
+
+        cm.init_weights(self)
+
+    def forward(self, input_tensor: torch.Tensor) -> torch.Tensor:
+        ppm, detail5, _, aux = self.backbone(input_tensor)
+
+        classifier = self.classifier(ppm + detail5)
+
+        return classifier, aux
+
+
+class LocalizationModel(nn.Module):
+
+    def __init__(
+        self,
+        classification_classes,
+        localization_classes,
+        head_channels,
+        backbone_path,
+        ppm_block="dappm",
+    ):
+        super().__init__()
+
+        self.head_channels = head_channels
+        self.localization_classes = localization_classes
+
+        self.backbone = PixelClassificationModel(
+            classification_classes, head_channels, ppm_block="ce"
+        )
+
+        snapshot = torch.load(backbone_path)
+
+        state_dict = snapshot["model_state_dict"]
+
+        state_dict = {
+            k.replace("model.", ""): v
+            for k, v in state_dict.items()
+            if k.startswith("model.")
+        }
+
+        self.backbone.load_state_dict(state_dict)
+
+        for param in self.backbone.parameters():
+            param.requires_grad = False
+
+        self.centerness = CenternessHead(
+            in_channels=classification_classes,
+            head_channels=head_channels,
+            num_classes=localization_classes,
+            scale_factor=8,
+        )
+
+        self.regressor = RegressionHead(
+            in_channels=classification_classes,
+            head_channels=head_channels,
+            scale_factor=8,
+        )
+
+    def forward(self, input_tensor):
+        classifier, _ = self.backbone(input_tensor)
+
+        centerness = self.centerness(classifier).sigmoid()
+        regression = self.regressor(classifier)
+
+        return classifier, centerness, regression
+
+    def postprocess(self, output, conf_th=0.2):
+        _, centerness, regression = output
+
+        center_pool = F.max_pool2d(centerness, kernel_size=3, stride=1, padding=1)
+        center_mask = (center_pool == centerness).float()
+        centerness = centerness * center_mask
+
+        batch, _, height, width = centerness.shape
+
+        detections = []
+
+        for batch_idx in range(batch):
+            scores, indices = torch.topk(centerness[batch_idx].view(-1), k=100)
+            scores = scores[scores >= conf_th]
+            topk_indices = indices[: len(scores)]
+
+            labels = (topk_indices / (height * width)).int()
+            indices = topk_indices % (height * width)
+
+            xs = (indices % width).int()
+            ys = (indices / width).int()
+
+            wh = regression[batch_idx][:, ys, xs]
+            half_w, half_h = wh[0] / 2, wh[1] / 2
+
+            bboxes = torch.stack(
+                [xs - half_w, ys - half_h, xs + half_w, ys + half_h], dim=1
+            )
+
+            detections.append([bboxes, scores, labels])
+
+        return detections
 
 
 class Network(nn.Module):
@@ -41,6 +158,7 @@ class Network(nn.Module):
             in_channels=self.backbone.out_channels[0],
             head_channels=head_channels,
             num_classes=classification_classes,
+            scale_factor=None,
         )
 
         self.centerness = CenternessHead(
@@ -48,11 +166,6 @@ class Network(nn.Module):
             head_channels=head_channels,
             num_classes=localization_classes,
         )
-
-        # self.regressor = RegressionHead(
-        #     in_channels=self.backbone.out_channels[0],
-        #     head_channels=head_channels,
-        # )
 
         self.regressor = RegressionHead(
             in_channels=localization_classes,
@@ -74,25 +187,16 @@ class Network(nn.Module):
             and object localization tensors.
         """
         # Pass input through backbone network
-        ppm, detail5, _ = self.backbone(input_tensor)
+        ppm, detail5, _, aux = self.backbone(input_tensor)
 
         classifier = self.classifier(ppm + detail5)
-        centerness = self.centerness(
-            classifier[
-                :, self.classification_classes - self.localization_classes :, ...
-            ]
-        ).sigmoid()
-        # regression = self.regressor(ppm + detail5)
-        regression = self.regressor(
-            classifier[
-                :, self.classification_classes - self.localization_classes :, ...
-            ]
-        )
+        centerness = self.centerness(classifier[:, 11::, :]).sigmoid()
+        regression = self.regressor(classifier[:, 11::, :])
 
         classifier = cm.Upsample(classifier, scale_factor=8)
 
         # Pass output through classification and localization heads
-        return classifier, (centerness, regression)
+        return (classifier, aux), (centerness, regression)
 
 
 if __name__ == "__main__":

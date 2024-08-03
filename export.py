@@ -32,7 +32,7 @@ def export():
         ppm_block="ce",
     )
 
-    work_dir = "exp/paper_exp0/"
+    work_dir = "exp/paper_exp1_0.1_bbox_loss/"
     model_path = work_dir + "checkpoints/model_best.pth"
     snapshot = torch.load(model_path)
 
