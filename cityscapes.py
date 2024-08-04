@@ -16,9 +16,9 @@ class CityscapesDataModule(L.LightningDataModule):
 
         self.batch_size = batch_size
 
-    def setup(self):
+    def setup(self, stage=None):
         self.train_dataset = CityscapesDataset(split="train")
-        self.val_dataset = CityscapesDataset(split="val")
+        self.val_dataset = CityscapesDataset(split="eval")
 
     def train_dataloader(self):
         return torch.utils.data.DataLoader(
@@ -95,7 +95,7 @@ class CityscapesDataset(Dataset):
 
     def __getitem__(self, idx):
         sample = self.samples[idx]
-        image_path, mask_path, _ = sample.split()
+        image_path, mask_path = sample.split()
 
         image = cv2.imread(os.path.join(self.root, image_path))
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
@@ -108,7 +108,7 @@ class CityscapesDataset(Dataset):
         mask = transformed["mask"]
 
         temp = mask.copy()
-        for k, v in self._get_mask_mapping(self.ignore_index):
+        for k, v in self._get_mask_mapping().items():
             mask[temp == k] = v
 
         image = image.transpose(2, 0, 1)

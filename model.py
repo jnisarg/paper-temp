@@ -16,7 +16,7 @@ class Model(nn.Module):
         )
 
         self.feature_channels = self.feature_extractor.feature_info.channels()
-        print(self.feature_channels)
+        # print(self.feature_channels)
 
         self.c4 = nn.Sequential(
             nn.Conv2d(self.feature_channels[3], 64, kernel_size=1, bias=False),
@@ -37,6 +37,20 @@ class Model(nn.Module):
             nn.Conv2d(self.feature_channels[0], 64, kernel_size=1, bias=False),
             nn.BatchNorm2d(64),
             nn.ReLU(),
+        )
+
+        self.centerness = nn.Sequential(
+            nn.Conv2d(64, 64, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(64),
+            nn.ReLU(),
+            nn.Conv2d(64, 8, kernel_size=1),
+        )
+
+        self.regression = nn.Sequential(
+            nn.Conv2d(64, 64, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(64),
+            nn.ReLU(),
+            nn.Conv2d(64, 2, kernel_size=1),
         )
 
         self.classifier = nn.Sequential(
@@ -67,4 +81,12 @@ class Model(nn.Module):
         out = F.interpolate(
             self.classifier(c1), scale_factor=4, mode="bilinear", align_corners=False
         )
-        return out
+
+        centerness = F.interpolate(
+            self.centerness(c1), scale_factor=4, mode="bilinear", align_corners=False
+        ).sigmoid()
+        regression = F.interpolate(
+            self.regression(c1), scale_factor=4, mode="bilinear", align_corners=False
+        )
+
+        return out, centerness, regression

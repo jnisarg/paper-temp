@@ -10,7 +10,10 @@ class Criterion(nn.Module):
         self.thresh = -torch.log(torch.tensor(0.75, dtype=torch.float))
         self.ignore_index = 255
 
-    def forward(self, preds, masks):
+    def forward(self, preds, targets):
+        classifier, centerness, regression = preds
+        images, masks, bboxes, labels, heatmaps, infos = targets
+
         n_min = masks[masks != self.ignore_index].numel() // 16
 
         loss = F.cross_entropy(
