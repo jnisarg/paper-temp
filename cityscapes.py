@@ -222,12 +222,19 @@ class CityscapesDataset(Dataset):
             dtype=np.float32,
         ).T
 
+        bboxes_h, bboxes_w, bbox_centers = (
+            bboxes_h / 4,
+            bboxes_w / 4,
+            bbox_centers / 4,
+        )
+
         bbox_centers[:, 0] = np.clip(bbox_centers[:, 0], 0, image.shape[1] - 1)
         bbox_centers[:, 1] = np.clip(bbox_centers[:, 1], 0, image.shape[0] - 1)
 
         labels = torch.tensor(labels, dtype=torch.long)
 
-        center_heatmaps = np.zeros((8, *image.shape[:2]), dtype=np.float32)
+        # center_heatmaps = np.zeros((8, *image.shape[:2]), dtype=np.float32)
+        center_heatmaps = np.zeros((8, image.shape[0] // 4, image.shape[1] // 4), dtype=np.float32)
         object_mask = torch.ones(len(labels))
 
         for idx, label in enumerate(labels):

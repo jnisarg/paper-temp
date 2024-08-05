@@ -283,35 +283,35 @@ class Model(nn.Module):
         enc_out_channels = self.encoder.out_channels
 
         self.c5 = nn.Sequential(
-            nn.Conv2d(enc_out_channels[3][2], 256, kernel_size=1, bias=False),
-            nn.BatchNorm2d(256),
+            nn.Conv2d(enc_out_channels[3][2], 128, kernel_size=1, bias=False),
+            nn.BatchNorm2d(128),
             nn.ReLU(),
         )
         self.c4 = nn.Sequential(
-            nn.Conv2d(enc_out_channels[3][1], 256, kernel_size=1, bias=False),
-            nn.BatchNorm2d(256),
+            nn.Conv2d(enc_out_channels[3][1], 128, kernel_size=1, bias=False),
+            nn.BatchNorm2d(128),
             nn.ReLU(),
         )
         self.c3 = nn.Sequential(
-            nn.Conv2d(enc_out_channels[3][0], 256, kernel_size=1, bias=False),
-            nn.BatchNorm2d(256),
+            nn.Conv2d(enc_out_channels[3][0], 128, kernel_size=1, bias=False),
+            nn.BatchNorm2d(128),
             nn.ReLU(),
         )
-        # self.c1 = nn.Sequential(
-        #     nn.Conv2d(enc_out_channels[0], 256, kernel_size=1, bias=False),
-        #     nn.BatchNorm2d(256),
+        # self.c2 = nn.Sequential(
+        #     nn.Conv2d(enc_out_channels[0], 128, kernel_size=1, bias=False),
+        #     nn.BatchNorm2d(128),
         #     nn.ReLU(),
         # )
 
         self.centerness = nn.Sequential(
-            nn.Conv2d(256, 64, kernel_size=3, padding=1, bias=False),
+            nn.Conv2d(128, 64, kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(64),
             nn.ReLU(),
             nn.Conv2d(64, 8, kernel_size=1),
         )
 
         self.regression = nn.Sequential(
-            nn.Conv2d(256, 64, kernel_size=3, padding=1, bias=False),
+            nn.Conv2d(128, 64, kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(64),
             nn.ReLU(),
             nn.Conv2d(64, 2, kernel_size=1),
@@ -355,6 +355,7 @@ class Model(nn.Module):
             mode="bilinear",
             align_corners=False,
         )
+        c2 = F.interpolate(c3 + detail5, scale_factor=2, mode="bilinear", align_corners=False)
 
         # print(c5.shape, c4.shape, c3.shape, ppm.shape, detail5.shape)
         # c1 = self.c1(features[0]) + c2
@@ -371,18 +372,21 @@ class Model(nn.Module):
             align_corners=False,
         )
 
-        centerness = F.interpolate(
-            self.centerness(c3),
-            scale_factor=8,
-            mode="bilinear",
-            align_corners=False,
-        ).sigmoid()
-        regression = F.interpolate(
-            self.regression(c3),
-            scale_factor=8,
-            mode="bilinear",
-            align_corners=False,
-        )
+        centerness = self.centerness(c2)
+        regression = self.regression(c2)
+
+        # centerness = F.interpolate(
+        #     self.centerness(c2),
+        #     scale_factor=4,
+        #     mode="bilinear",
+        #     align_corners=False,
+        # ).sigmoid()
+        # regression = F.interpolate(
+        #     self.regression(c2),
+        #     scale_factor=4,
+        #     mode="bilinear",
+        #     align_corners=False,
+        # )
 
         return classifier, compression3, centerness, regression
 
