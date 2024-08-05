@@ -355,7 +355,9 @@ class Model(nn.Module):
             mode="bilinear",
             align_corners=False,
         )
-        c2 = F.interpolate(c3 + detail5, scale_factor=2, mode="bilinear", align_corners=False)
+        c2 = F.interpolate(
+            c3 + detail5, scale_factor=2, mode="bilinear", align_corners=False
+        )
 
         # print(c5.shape, c4.shape, c3.shape, ppm.shape, detail5.shape)
         # c1 = self.c1(features[0]) + c2
@@ -372,7 +374,7 @@ class Model(nn.Module):
             align_corners=False,
         )
 
-        centerness = self.centerness(c2)
+        centerness = self.centerness(c2).sigmoid()
         regression = self.regression(c2)
 
         # centerness = F.interpolate(

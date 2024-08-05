@@ -93,6 +93,7 @@ class Criterion(nn.Module):
             )
 
         bbox_loss = regression_loss / (num + 1e-7) * 0.1
+        localization_loss = centerness_loss + bbox_loss
 
-        return classifier_loss + bbox_loss
+        return classifier_loss + localization_loss
         # return classifier_loss
