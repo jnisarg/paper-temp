@@ -81,12 +81,15 @@ class Criterion(nn.Module):
             ].view(-1)
             batch_bboxes = bboxes[batch][target_nonpad_mask[batch]]
 
-            wh = torch.stack(
-                [
-                    batch_bboxes[:, 2] - batch_bboxes[:, 0],
-                    batch_bboxes[:, 3] - batch_bboxes[:, 1],
-                ]
-            ).view(-1)
+            wh = (
+                torch.stack(
+                    [
+                        batch_bboxes[:, 2] - batch_bboxes[:, 0],
+                        batch_bboxes[:, 3] - batch_bboxes[:, 1],
+                    ]
+                ).view(-1)
+                / 4
+            )
 
             regression_loss += F.smooth_l1_loss(
                 batch_regression_pred, wh, reduction="sum"
