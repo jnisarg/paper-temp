@@ -2,9 +2,11 @@ from timm.optim import AdaBelief
 
 # from timm.scheduler import PolyLRScheduler
 import torch
+import torch.nn.functional as F
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts, PolynomialLR
 
 import lightning as L
+from torchmetrics.detection import MeanAveragePrecision
 
 from model import Model
 
@@ -42,6 +44,8 @@ class Network(L.LightningModule):
         ]
         self.metrics = Metrics(num_classes=19, class_names=self.class_names)
 
+        self.mAP = MeanAveragePrecision()
+
     def training_step(self, batch):
         preds = self.model(batch[0])
         loss = self.criterion(preds, batch)
@@ -76,6 +80,20 @@ class Network(L.LightningModule):
 
         self.metrics.update(preds[0], batch[1])
 
+        _, detections = self.postprocess(preds, conf_th=0.3, topk=100)
+
+        pred_det = [
+            {
+                "boxes": detections[0][0],
+                "scores": detections[0][1],
+                "labels": detections[0][2],
+            }
+        ]
+
+        target_det = [{"boxes": batch[2][0], "labels": batch[3][0]}]
+
+        self.mAP.update(pred_det, target_det)
+
         self.log(
             "val_loss",
             loss,
@@ -91,6 +109,7 @@ class Network(L.LightningModule):
 
     def on_validation_epoch_end(self):
         self.metrics.collect()
+        mAP = self.mAP.compute()
 
         self.log(
             "val_miou",
@@ -103,7 +122,7 @@ class Network(L.LightningModule):
             batch_size=1,
         )
 
-        self.print(f"\n\n{self.metrics}\n\n")
+        self.print(f"\n\n{self.metrics}\n{mAP}\n\n")
 
     def lr_scheduler_step(self, scheduler, metric):
         scheduler.step()
@@ -127,6 +146,39 @@ class Network(L.LightningModule):
                 # "frequency": 1,
             },
         }
+
+    def postprocess(self, outputs, conf_th=0.3, topk=100):
+        classifier, _, centerness, regression = outputs
+
+        center_pool = F.max_pool2d(centerness, kernel_size=3, stride=1, padding=1)
+        center_mask = (center_pool == centerness).float()
+        centerness = centerness * center_mask
+
+        batch, _, height, width = centerness.shape
+
+        detections = []
+
+        for batch_idx in range(batch):
+            scores, indices = torch.topk(centerness[batch_idx].view(-1), k=topk)
+            scores = scores[scores >= conf_th]
+            topk_indices = indices[: len(scores)]
+
+            labels = (topk_indices / (height * width)).int()
+            indices = topk_indices % (height * width)
+
+            xs = (indices % width).int()
+            ys = (indices / width).int()
+
+            wh = regression[batch_idx][:, ys, xs]
+            half_w, half_h = wh[0] / 2, wh[1] / 2
+
+            bboxes = torch.stack(
+                [xs - half_w, ys - half_h, xs + half_w, ys + half_h], dim=1
+            )
+
+            detections.append([bboxes, scores, labels])
+
+        return classifier.argmax(dim=1), detections
 
     def forward(self, x):
         return self.model(x)
