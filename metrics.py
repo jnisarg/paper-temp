@@ -23,7 +23,7 @@ class Metrics:
     def reset(self):
         self.confusion_matrix = torch.zeros(
             self.num_classes, self.num_classes, dtype=torch.int64
-        ).cuda()
+        ).cuda(device=1)
         self.metrics = {}
 
     def update(self, pred, target):
@@ -33,6 +33,7 @@ class Metrics:
         ).view(self.num_classes, self.num_classes)
 
     def prepare_input(self, pred, target):
+        # print(f"\n\n {torch.unique(target.argmax(dim=1))}")
         if pred.dim() > 3:
             pred = torch.argmax(pred, dim=1).view(-1)
         else:
@@ -52,6 +53,8 @@ class Metrics:
         iou = TP / (TP + FP + FN + self.eps)
 
         class_weight = self.confusion_matrix.sum(1) / self.confusion_matrix.sum()
+
+        # print(f"\n\n{self.confusion_matrix.sum(0)}\n\n")
 
         self.metrics.update(
             {

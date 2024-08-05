@@ -178,3 +178,4 @@ data/*
 exp/*
 logs/*
 lightning_logs/*
+checkpoints/*
