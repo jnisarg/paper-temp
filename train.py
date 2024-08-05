@@ -174,7 +174,7 @@ class Network(L.LightningModule):
 
             bboxes = torch.stack(
                 [xs - half_w, ys - half_h, xs + half_w, ys + half_h], dim=1
-            )
+            ) * 4
 
             detections.append([bboxes, scores, labels])
 
