@@ -1,6 +1,7 @@
 from timm.optim import AdaBelief
 
 # from timm.scheduler import PolyLRScheduler
+import torch
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts, PolynomialLR
 
 import lightning as L
@@ -127,6 +128,9 @@ class Network(L.LightningModule):
             },
         }
 
+    def forward(self, x):
+        return self.model(x)
+
 
 def main():
     dm = CityscapesDataModule()
@@ -135,7 +139,6 @@ def main():
     logger = L.pytorch.loggers.TensorBoardLogger(save_dir="logs", name="cityscapes")
 
     model = Network()
-    model.to_onnx("model.onnx", input_sample=dm.train_dataloader().dataset[0][0])
     trainer = L.Trainer(
         accelerator="gpu",
         # strategy="ddp",
@@ -157,7 +160,6 @@ def main():
         sync_batchnorm=False,
         default_root_dir="checkpoints",
     )
-    model.to_onnx("model_final.onnx", input_sample=dm.train_dataloader().dataset[0][0])
 
     trainer.fit(model, datamodule=dm)
 

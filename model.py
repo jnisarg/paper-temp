@@ -283,35 +283,35 @@ class Model(nn.Module):
         enc_out_channels = self.encoder.out_channels
 
         self.c5 = nn.Sequential(
-            nn.Conv2d(enc_out_channels[3][2], 128, kernel_size=1, bias=False),
-            nn.BatchNorm2d(128),
+            nn.Conv2d(enc_out_channels[3][2], 256, kernel_size=1, bias=False),
+            nn.BatchNorm2d(256),
             nn.ReLU(),
         )
         self.c4 = nn.Sequential(
-            nn.Conv2d(enc_out_channels[3][1], 128, kernel_size=1, bias=False),
-            nn.BatchNorm2d(128),
+            nn.Conv2d(enc_out_channels[3][1], 256, kernel_size=1, bias=False),
+            nn.BatchNorm2d(256),
             nn.ReLU(),
         )
         self.c3 = nn.Sequential(
-            nn.Conv2d(enc_out_channels[3][0], 128, kernel_size=1, bias=False),
-            nn.BatchNorm2d(128),
+            nn.Conv2d(enc_out_channels[3][0], 256, kernel_size=1, bias=False),
+            nn.BatchNorm2d(256),
             nn.ReLU(),
         )
         # self.c1 = nn.Sequential(
-        #     nn.Conv2d(enc_out_channels[0], 128, kernel_size=1, bias=False),
-        #     nn.BatchNorm2d(128),
+        #     nn.Conv2d(enc_out_channels[0], 256, kernel_size=1, bias=False),
+        #     nn.BatchNorm2d(256),
         #     nn.ReLU(),
         # )
 
         self.centerness = nn.Sequential(
-            nn.Conv2d(128, 64, kernel_size=3, padding=1, bias=False),
+            nn.Conv2d(256, 64, kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(64),
             nn.ReLU(),
             nn.Conv2d(64, 8, kernel_size=1),
         )
 
         self.regression = nn.Sequential(
-            nn.Conv2d(128, 64, kernel_size=3, padding=1, bias=False),
+            nn.Conv2d(256, 64, kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(64),
             nn.ReLU(),
             nn.Conv2d(64, 2, kernel_size=1),
@@ -331,11 +331,11 @@ class Model(nn.Module):
             nn.Conv2d(64, 19, kernel_size=1),
         )
 
-        for param in self.centerness.parameters():
-            param.requires_grad = False
+        # for param in self.centerness.parameters():
+        #     param.requires_grad = False
 
-        for param in self.regression.parameters():
-            param.requires_grad = False
+        # for param in self.regression.parameters():
+        #     param.requires_grad = False
 
     def forward(self, x):
         ppm, detail5, compression3, [context3, context4, context5] = self.encoder(x)
@@ -372,13 +372,13 @@ class Model(nn.Module):
         )
 
         centerness = F.interpolate(
-            self.centerness(c3 + detail5),
+            self.centerness(c3),
             scale_factor=8,
             mode="bilinear",
             align_corners=False,
         ).sigmoid()
         regression = F.interpolate(
-            self.regression(c3 + detail5),
+            self.regression(c3),
             scale_factor=8,
             mode="bilinear",
             align_corners=False,
