@@ -116,25 +116,25 @@ class CityscapesDataset(Dataset):
         9: [152, 251, 152],
         10: [70, 130, 180],
         11: [220, 20, 60],
-        12: [255, 0, 0],
-        13: [0, 0, 142],
-        14: [0, 0, 70],
-        15: [0, 60, 100],
-        16: [0, 80, 100],
-        17: [0, 0, 230],
-        18: [119, 11, 32],
+        # 12: [255, 0, 0],
+        12: [0, 0, 142],
+        # 14: [0, 0, 70],
+        # 15: [0, 60, 100],
+        # 16: [0, 80, 100],
+        # 17: [0, 0, 230],
+        13: [119, 11, 32],
         255: [0, 0, 0],
     }
 
     LOCALIZATION_CLASSES: Dict[int, str] = {
         0: "person",
-        1: "rider",
-        2: "car",
-        3: "truck",
-        4: "bus",
-        5: "train",
-        6: "motorcycle",
-        7: "bicycle",
+        # 1: "rider",
+        1: "car",
+        # 3: "truck",
+        # 4: "bus",
+        # 5: "train",
+        # 6: "motorcycle",
+        3: "bicycle",
     }
 
     def __init__(self, split="train"):
@@ -233,9 +233,9 @@ class CityscapesDataset(Dataset):
 
         labels = torch.tensor(labels, dtype=torch.long)
 
-        # center_heatmaps = np.zeros((8, *image.shape[:2]), dtype=np.float32)
+        # center_heatmaps = np.zeros((3, *image.shape[:2]), dtype=np.float32)
         center_heatmaps = np.zeros(
-            (8, image.shape[0] // 4, image.shape[1] // 4), dtype=np.float32
+            (3, image.shape[0] // 4, image.shape[1] // 4), dtype=np.float32
         )
         object_mask = torch.ones(len(labels))
 
@@ -290,6 +290,14 @@ class CityscapesDataset(Dataset):
         bboxes, labels = [], []
         for line in lines:
             label_id, x1, y1, x2, y2 = map(int, line.split())
+            if label_id in [0, 1]:
+                label_id = 0
+            if label_id in [2, 3, 4]:
+                label_id = 1
+            if label_id in [6, 7]:
+                label_id = 2
+            else:
+                continue
             bboxes.append([x1, y1, x2, y2])
             labels.append(label_id)
 
@@ -373,15 +381,15 @@ class CityscapesDataset(Dataset):
             22: 9,
             23: 10,
             24: 11,
-            25: 12,
-            26: 13,
-            27: 14,
-            28: 15,
+            25: 11,
+            26: 12,
+            27: 12,
+            28: 12,
             29: self.ignore_index,
             30: self.ignore_index,
-            31: 16,
-            32: 17,
-            33: 18,
+            31: self.ignore_index,
+            32: 13,
+            33: 13,
         }
 
     def collate_fn(self, batch):

@@ -15,17 +15,43 @@ from criterion import Criterion
 from cityscapes import CityscapesDataModule
 
 
+def freeze_od(model):
+    for param in model.centerness.parameters():
+        param.requires_grad = False
+
+    for param in model.regression.parameters():
+        param.requires_grad = False
+
+
+def unfreeze_od(model):
+    for param in model.centerness.parameters():
+        param.requires_grad = True
+
+    for param in model.regression.parameters():
+        param.requires_grad = True
+
+
+def freeze_sd(model):
+    for param in model.classifier.parameters():
+        param.requires_grad = False
+
+    for param in model.compression3.parameters():
+        param.requires_grad = False
+
+
+def unfreeze_sd(model):
+    for param in model.classifier.parameters():
+        param.requires_grad = True
+
+    for param in model.compression3.parameters():
+        param.requires_grad = True
+
+
 class Network(L.LightningModule):
     def __init__(self):
         super().__init__()
-        self.model = Model(
-            enc_planes=48,
-            enc_ppm_planes=128,
-            head_planes=256,
-            freeze_od=False,
-            freeze_sd=False,
-        )
-        self.criterion = Criterion()
+        self.model = Model(enc_planes=48, enc_ppm_planes=128, head_planes=256)
+        self.criterion = Criterion(self.trainer.global_step)
 
         self.class_names = [
             "road",
@@ -40,15 +66,15 @@ class Network(L.LightningModule):
             "terrain",
             "sky",
             "person",
-            "rider",
+            # "rider",
             "car",
-            "truck",
-            "bus",
-            "train",
-            "motorcycle",
+            # "truck",
+            # "bus",
+            # "train",
+            # "motorcycle",
             "bicycle",
         ]
-        self.metrics = Metrics(num_classes=19, class_names=self.class_names)
+        self.metrics = Metrics(num_classes=14, class_names=self.class_names)
 
         self.mAP = MeanAveragePrecision(class_metrics=True, iou_thresholds=[0.5]).cuda(
             device=1
@@ -56,17 +82,13 @@ class Network(L.LightningModule):
 
     def training_step(self, batch):
 
-        if self.trainer.global_step <= 30_000:
-            self.model.freeze_od = False
-            self.model.freeze_sd = False
         if self.trainer.global_step > 30_000 and self.trainer.global_step <= 150_000:
-            self.model.freeze_od = True
+            freeze_od(self.model)
         elif self.trainer.global_step > 150_000 and self.trainer.global_step <= 270_000:
-            self.model.freeze_od = False
-            self.model.freeze_sd = True
+            unfreeze_od(self.model)
+            freeze_sd(self.model)
         elif self.trainer.global_step > 270_000:
-            self.model.freeze_sd = False
-            self.model.freeze_sd = False
+            unfreeze_sd(self.model)
 
         preds = self.model(batch[0])
         loss = self.criterion(preds, batch)

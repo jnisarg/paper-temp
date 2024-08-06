@@ -266,14 +266,7 @@ class Encoder(nn.Module):
 
 class Model(nn.Module):
 
-    def __init__(
-        self,
-        enc_planes=32,
-        enc_ppm_planes=128,
-        head_planes=64,
-        freeze_od=False,
-        freeze_sd=False,
-    ):
+    def __init__(self, enc_planes=32, enc_ppm_planes=128, head_planes=64):
         super().__init__()
 
         # self.feature_extractor = timm.create_model(
@@ -289,9 +282,6 @@ class Model(nn.Module):
         self.enc_planes = enc_planes
         self.enc_ppm_planes = enc_ppm_planes
         self.head_planes = head_planes
-
-        self.freeze_od = freeze_od
-        self.freeze_sd = freeze_sd
 
         self.encoder = Encoder(planes=enc_planes, ppm_planes=enc_ppm_planes)
 
@@ -323,7 +313,7 @@ class Model(nn.Module):
             nn.Conv2d(192, self.head_planes, kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(self.head_planes),
             nn.ReLU(),
-            nn.Conv2d(self.head_planes, 8, kernel_size=1),
+            nn.Conv2d(self.head_planes, 3, kernel_size=1),
         )
 
         self.regression = nn.Sequential(
@@ -343,29 +333,15 @@ class Model(nn.Module):
             ),
             nn.BatchNorm2d(self.head_planes),
             nn.ReLU(),
-            nn.Conv2d(self.head_planes, 19, kernel_size=1),
+            nn.Conv2d(self.head_planes, 14, kernel_size=1),
         )
 
         self.compression3 = nn.Sequential(
             nn.Conv2d(enc_out_channels[2], self.head_planes, kernel_size=1, bias=False),
             nn.BatchNorm2d(self.head_planes),
             nn.ReLU(),
-            nn.Conv2d(self.head_planes, 19, kernel_size=1),
+            nn.Conv2d(self.head_planes, 14, kernel_size=1),
         )
-
-        if self.freeze_od:
-            for param in self.centerness.parameters():
-                param.requires_grad = False
-
-            for param in self.regression.parameters():
-                param.requires_grad = False
-
-        if self.freeze_sd:
-            for param in self.classifier.parameters():
-                param.requires_grad = False
-
-            for param in self.compression3.parameters():
-                param.requires_grad = False
 
     def forward(self, x):
         ppm, detail5, compression3, [context3, context4, context5] = self.encoder(x)
@@ -392,29 +368,21 @@ class Model(nn.Module):
         # print(c5.shape, c4.shape, c3.shape, ppm.shape, detail5.shape)
         # c1 = self.c1(features[0]) + c2
 
-        if not self.freeze_sd:
-            classifier = F.interpolate(
-                self.classifier(ppm + detail5),
-                scale_factor=8,
-                mode="bilinear",
-                align_corners=False,
-            )
-            compression3 = F.interpolate(
-                self.compression3(compression3),
-                scale_factor=8,
-                mode="bilinear",
-                align_corners=False,
-            )
-        else:
-            classifier = None
-            compression3 = None
+        classifier = F.interpolate(
+            self.classifier(ppm + detail5),
+            scale_factor=8,
+            mode="bilinear",
+            align_corners=False,
+        )
+        compression3 = F.interpolate(
+            self.compression3(compression3),
+            scale_factor=8,
+            mode="bilinear",
+            align_corners=False,
+        )
 
-        if not self.freeze_od:
-            centerness = self.centerness(c2).sigmoid()
-            regression = self.regression(c2)
-        else:
-            centerness = None
-            regression = None
+        centerness = self.centerness(c2).sigmoid()
+        regression = self.regression(c2)
 
         # centerness = F.interpolate(
         #     self.centerness(c2),
