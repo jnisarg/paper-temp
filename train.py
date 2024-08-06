@@ -183,7 +183,13 @@ class Network(L.LightningModule):
 
     def configure_optimizers(self):
         # return torch.optim.Adam(self.parameters(), lr=0.045, weight_decay=0.0005)
-        optimizer = AdaBelief(self.parameters(), lr=0.001, weight_decay=0.0005)
+
+        if self.trainer.global_step > 150_000:
+            lr = 0.0001
+        else:
+            lr = 0.001
+
+        optimizer = AdaBelief(self.parameters(), lr=lr, weight_decay=0.0005)
 
         scheduler = CosineAnnealingWarmRestarts(
             optimizer, T_0=10_000, T_mult=1, eta_min=1e-6
