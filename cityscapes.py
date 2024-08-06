@@ -293,9 +293,9 @@ class CityscapesDataset(Dataset):
             label_id, x1, y1, x2, y2 = map(int, line.split())
             if label_id in [0, 1]:
                 label_id = 0
-            if label_id in [2, 3, 4]:
+            elif label_id in [2, 3, 4]:
                 label_id = 1
-            if label_id in [6, 7]:
+            elif label_id in [6, 7]:
                 label_id = 2
             else:
                 continue
