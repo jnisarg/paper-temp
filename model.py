@@ -161,11 +161,11 @@ class CE(nn.Module):
 
 
 class Encoder(nn.Module):
-    def __init__(self):
+    def __init__(self, planes=32, ppm_planes=128):
         super().__init__()
 
-        self.planes = 48
-        self.ppm_planes = 128
+        self.planes = planes
+        self.ppm_planes = ppm_planes
 
         self.stem = nn.Sequential(
             ConvBNReLU(3, self.planes, 3, stride=2, padding=1),
@@ -265,7 +265,15 @@ class Encoder(nn.Module):
 
 
 class Model(nn.Module):
-    def __init__(self):
+
+    def __init__(
+        self,
+        enc_planes=32,
+        enc_ppm_planes=128,
+        head_planes=64,
+        freeze_od=False,
+        freeze_sd=False,
+    ):
         super().__init__()
 
         # self.feature_extractor = timm.create_model(
@@ -278,64 +286,86 @@ class Model(nn.Module):
         # self.feature_channels = self.feature_extractor.feature_info.channels()
         # print(self.feature_channels)
 
-        self.encoder = Encoder()
+        self.enc_planes = enc_planes
+        self.enc_ppm_planes = enc_ppm_planes
+        self.head_planes = head_planes
+
+        self.freeze_od = freeze_od
+        self.freeze_sd = freeze_sd
+
+        self.encoder = Encoder(planes=enc_planes, ppm_planes=enc_ppm_planes)
 
         enc_out_channels = self.encoder.out_channels
 
         self.c5 = nn.Sequential(
-            nn.Conv2d(enc_out_channels[3][2], 192, kernel_size=1, bias=False),
-            nn.BatchNorm2d(192),
+            nn.Conv2d(
+                enc_out_channels[3][2], enc_out_channels[1], kernel_size=1, bias=False
+            ),
+            nn.BatchNorm2d(enc_out_channels[1]),
             nn.ReLU(),
         )
         self.c4 = nn.Sequential(
-            nn.Conv2d(enc_out_channels[3][1], 192, kernel_size=1, bias=False),
-            nn.BatchNorm2d(192),
+            nn.Conv2d(
+                enc_out_channels[3][1], enc_out_channels[1], kernel_size=1, bias=False
+            ),
+            nn.BatchNorm2d(enc_out_channels[1]),
             nn.ReLU(),
         )
         self.c3 = nn.Sequential(
-            nn.Conv2d(enc_out_channels[3][0], 192, kernel_size=1, bias=False),
-            nn.BatchNorm2d(192),
+            nn.Conv2d(
+                enc_out_channels[3][0], enc_out_channels[1], kernel_size=1, bias=False
+            ),
+            nn.BatchNorm2d(enc_out_channels[1]),
             nn.ReLU(),
         )
-        # self.c2 = nn.Sequential(
-        #     nn.Conv2d(enc_out_channels[0], 192, kernel_size=1, bias=False),
-        #     nn.BatchNorm2d(192),
-        #     nn.ReLU(),
-        # )
 
         self.centerness = nn.Sequential(
-            nn.Conv2d(192, 128, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(128),
+            nn.Conv2d(192, self.head_planes, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(self.head_planes),
             nn.ReLU(),
-            nn.Conv2d(128, 8, kernel_size=1),
+            nn.Conv2d(self.head_planes, 8, kernel_size=1),
         )
 
         self.regression = nn.Sequential(
-            nn.Conv2d(192, 128, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(128),
+            nn.Conv2d(192, self.head_planes, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(self.head_planes),
             nn.ReLU(),
-            nn.Conv2d(128, 2, kernel_size=1),
+            nn.Conv2d(self.head_planes, 2, kernel_size=1),
         )
 
         self.classifier = nn.Sequential(
-            nn.Conv2d(enc_out_channels[0], 128, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(128),
+            nn.Conv2d(
+                enc_out_channels[0],
+                self.head_planes,
+                kernel_size=3,
+                padding=1,
+                bias=False,
+            ),
+            nn.BatchNorm2d(self.head_planes),
             nn.ReLU(),
-            nn.Conv2d(128, 19, kernel_size=1),
+            nn.Conv2d(self.head_planes, 19, kernel_size=1),
         )
 
         self.compression3 = nn.Sequential(
-            nn.Conv2d(enc_out_channels[2], 128, kernel_size=1, bias=False),
-            nn.BatchNorm2d(128),
+            nn.Conv2d(enc_out_channels[2], self.head_planes, kernel_size=1, bias=False),
+            nn.BatchNorm2d(self.head_planes),
             nn.ReLU(),
-            nn.Conv2d(128, 19, kernel_size=1),
+            nn.Conv2d(self.head_planes, 19, kernel_size=1),
         )
 
-        # for param in self.centerness.parameters():
-        #     param.requires_grad = False
+        if self.freeze_od:
+            for param in self.centerness.parameters():
+                param.requires_grad = False
 
-        # for param in self.regression.parameters():
-        #     param.requires_grad = False
+            for param in self.regression.parameters():
+                param.requires_grad = False
+
+        if self.freeze_sd:
+            for param in self.classifier.parameters():
+                param.requires_grad = False
+
+            for param in self.compression3.parameters():
+                param.requires_grad = False
 
     def forward(self, x):
         ppm, detail5, compression3, [context3, context4, context5] = self.encoder(x)
@@ -361,21 +391,30 @@ class Model(nn.Module):
 
         # print(c5.shape, c4.shape, c3.shape, ppm.shape, detail5.shape)
         # c1 = self.c1(features[0]) + c2
-        classifier = F.interpolate(
-            self.classifier(ppm + detail5),
-            scale_factor=8,
-            mode="bilinear",
-            align_corners=False,
-        )
-        compression3 = F.interpolate(
-            self.compression3(compression3),
-            scale_factor=8,
-            mode="bilinear",
-            align_corners=False,
-        )
 
-        centerness = self.centerness(c2).sigmoid()
-        regression = self.regression(c2)
+        if not self.freeze_sd:
+            classifier = F.interpolate(
+                self.classifier(ppm + detail5),
+                scale_factor=8,
+                mode="bilinear",
+                align_corners=False,
+            )
+            compression3 = F.interpolate(
+                self.compression3(compression3),
+                scale_factor=8,
+                mode="bilinear",
+                align_corners=False,
+            )
+        else:
+            classifier = None
+            compression3 = None
+
+        if not self.freeze_od:
+            centerness = self.centerness(c2).sigmoid()
+            regression = self.regression(c2)
+        else:
+            centerness = None
+            regression = None
 
         # centerness = F.interpolate(
         #     self.centerness(c2),

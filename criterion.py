@@ -61,42 +61,49 @@ class Criterion(nn.Module):
         classifier, compression3, centerness, regression = preds
         images, masks, bboxes, labels, heatmaps, infos = targets
 
-        classifier_loss = self._ohem_loss(classifier, masks) + 0.4 * self._ohem_loss(
-            compression3, masks
-        )
+        if classifier is not None:
+            classifier_loss = self._ohem_loss(
+                classifier, masks
+            ) + 0.4 * self._ohem_loss(compression3, masks)
+        else:
+            classifier_loss = 0.0
 
-        target_nonpad_mask = labels.gt(-1)
+        if centerness is not None:
+            target_nonpad_mask = labels.gt(-1)
 
-        centerness_loss = self._focal_loss(centerness, heatmaps)
-        regression_loss = centerness_loss.new_tensor(0.0)
+            centerness_loss = self._focal_loss(centerness, heatmaps)
+            regression_loss = centerness_loss.new_tensor(0.0)
 
-        num = 0
-        for batch in range(images.size(0)):
-            ct = infos[batch]["bbox_centers"].cuda()
-            ct_int = ct.long()
-            num += len(ct_int)
+            num = 0
+            for batch in range(images.size(0)):
+                ct = infos[batch]["bbox_centers"].cuda()
+                ct_int = ct.long()
+                num += len(ct_int)
 
-            batch_regression_pred = regression[
-                batch, :, ct_int[:, 1], ct_int[:, 0]
-            ].view(-1)
-            batch_bboxes = bboxes[batch][target_nonpad_mask[batch]]
+                batch_regression_pred = regression[
+                    batch, :, ct_int[:, 1], ct_int[:, 0]
+                ].view(-1)
+                batch_bboxes = bboxes[batch][target_nonpad_mask[batch]]
 
-            wh = (
-                torch.stack(
-                    [
-                        batch_bboxes[:, 2] - batch_bboxes[:, 0],
-                        batch_bboxes[:, 3] - batch_bboxes[:, 1],
-                    ]
-                ).view(-1)
-                / 4
-            )
+                wh = (
+                    torch.stack(
+                        [
+                            batch_bboxes[:, 2] - batch_bboxes[:, 0],
+                            batch_bboxes[:, 3] - batch_bboxes[:, 1],
+                        ]
+                    ).view(-1)
+                    / 4
+                )
 
-            regression_loss += F.smooth_l1_loss(
-                batch_regression_pred, wh, reduction="sum"
-            )
+                regression_loss += F.smooth_l1_loss(
+                    batch_regression_pred, wh, reduction="sum"
+                )
 
-        bbox_loss = regression_loss / (num + 1e-7) * 0.1
-        localization_loss = centerness_loss + bbox_loss
+            bbox_loss = regression_loss / (num + 1e-7) * 0.1
+            localization_loss = centerness_loss + bbox_loss
+
+        else:
+            localization_loss = 0.0
 
         return classifier_loss + localization_loss
         # return classifier_loss

@@ -18,7 +18,13 @@ from cityscapes import CityscapesDataModule
 class Network(L.LightningModule):
     def __init__(self):
         super().__init__()
-        self.model = Model()
+        self.model = Model(
+            enc_planes=48,
+            enc_ppm_planes=128,
+            head_planes=256,
+            freeze_od=False,
+            freeze_sd=False,
+        )
         self.criterion = Criterion()
 
         self.class_names = [
@@ -49,6 +55,19 @@ class Network(L.LightningModule):
         )
 
     def training_step(self, batch):
+
+        if self.trainer.global_step <= 30_000:
+            self.model.freeze_od = False
+            self.model.freeze_sd = False
+        if self.trainer.global_step > 30_000 and self.trainer.global_step <= 150_000:
+            self.model.freeze_od = True
+        elif self.trainer.global_step > 150_000 and self.trainer.global_step <= 270_000:
+            self.model.freeze_od = False
+            self.model.freeze_sd = True
+        elif self.trainer.global_step > 270_000:
+            self.model.freeze_sd = False
+            self.model.freeze_sd = False
+
         preds = self.model(batch[0])
         loss = self.criterion(preds, batch)
 
@@ -144,12 +163,12 @@ class Network(L.LightningModule):
         # return torch.optim.Adam(self.parameters(), lr=0.045, weight_decay=0.0005)
         optimizer = AdaBelief(self.parameters(), lr=0.001, weight_decay=0.0005)
 
-        # scheduler = CosineAnnealingWarmRestarts(
-        #     optimizer, T_0=10_000, T_mult=1, eta_min=1e-6
-        # )
+        scheduler = CosineAnnealingWarmRestarts(
+            optimizer, T_0=10_000, T_mult=1, eta_min=1e-6
+        )
 
         # scheduler = PolyLRScheduler(optimizer, t_initial=100, lr_min=1e-6, power=0.9)
-        scheduler = PolynomialLR(optimizer, total_iters=240_000, power=0.9)
+        # scheduler = PolynomialLR(optimizer, total_iters=240_000, power=0.9)
 
         return {
             "optimizer": optimizer,
@@ -203,7 +222,7 @@ def main():
     dm.setup()
 
     logger = L.pytorch.loggers.TensorBoardLogger(
-        save_dir="logs", name="cityscapes_bs8_b48_h128"
+        save_dir="logs", name="cityscapes_bs8_b48_h256_freeze"
     )
 
     model = Network()
@@ -214,7 +233,7 @@ def main():
         logger=logger,
         precision="16-mixed",
         # max_epochs=100,
-        max_steps=240_000,
+        max_steps=330_000,
         # callbacks=[
         #     L.pytorch.callbacks.early_stopping.EarlyStopping(
         #         monitor="val_loss", mode="min"
