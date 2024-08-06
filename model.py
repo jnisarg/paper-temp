@@ -164,7 +164,7 @@ class Encoder(nn.Module):
     def __init__(self):
         super().__init__()
 
-        self.planes = 32
+        self.planes = 48
         self.ppm_planes = 128
 
         self.stem = nn.Sequential(
@@ -283,52 +283,52 @@ class Model(nn.Module):
         enc_out_channels = self.encoder.out_channels
 
         self.c5 = nn.Sequential(
-            nn.Conv2d(enc_out_channels[3][2], 128, kernel_size=1, bias=False),
-            nn.BatchNorm2d(128),
+            nn.Conv2d(enc_out_channels[3][2], 192, kernel_size=1, bias=False),
+            nn.BatchNorm2d(192),
             nn.ReLU(),
         )
         self.c4 = nn.Sequential(
-            nn.Conv2d(enc_out_channels[3][1], 128, kernel_size=1, bias=False),
-            nn.BatchNorm2d(128),
+            nn.Conv2d(enc_out_channels[3][1], 192, kernel_size=1, bias=False),
+            nn.BatchNorm2d(192),
             nn.ReLU(),
         )
         self.c3 = nn.Sequential(
-            nn.Conv2d(enc_out_channels[3][0], 128, kernel_size=1, bias=False),
-            nn.BatchNorm2d(128),
+            nn.Conv2d(enc_out_channels[3][0], 192, kernel_size=1, bias=False),
+            nn.BatchNorm2d(192),
             nn.ReLU(),
         )
         # self.c2 = nn.Sequential(
-        #     nn.Conv2d(enc_out_channels[0], 128, kernel_size=1, bias=False),
-        #     nn.BatchNorm2d(128),
+        #     nn.Conv2d(enc_out_channels[0], 192, kernel_size=1, bias=False),
+        #     nn.BatchNorm2d(192),
         #     nn.ReLU(),
         # )
 
         self.centerness = nn.Sequential(
-            nn.Conv2d(128, 64, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(64),
+            nn.Conv2d(192, 128, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(128),
             nn.ReLU(),
-            nn.Conv2d(64, 8, kernel_size=1),
+            nn.Conv2d(128, 8, kernel_size=1),
         )
 
         self.regression = nn.Sequential(
-            nn.Conv2d(128, 64, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(64),
+            nn.Conv2d(192, 128, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(128),
             nn.ReLU(),
-            nn.Conv2d(64, 2, kernel_size=1),
+            nn.Conv2d(128, 2, kernel_size=1),
         )
 
         self.classifier = nn.Sequential(
-            nn.Conv2d(enc_out_channels[0], 64, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(64),
+            nn.Conv2d(enc_out_channels[0], 128, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(128),
             nn.ReLU(),
-            nn.Conv2d(64, 19, kernel_size=1),
+            nn.Conv2d(128, 19, kernel_size=1),
         )
 
         self.compression3 = nn.Sequential(
-            nn.Conv2d(enc_out_channels[2], 64, kernel_size=1, bias=False),
-            nn.BatchNorm2d(64),
+            nn.Conv2d(enc_out_channels[2], 128, kernel_size=1, bias=False),
+            nn.BatchNorm2d(128),
             nn.ReLU(),
-            nn.Conv2d(64, 19, kernel_size=1),
+            nn.Conv2d(128, 19, kernel_size=1),
         )
 
         # for param in self.centerness.parameters():

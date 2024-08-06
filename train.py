@@ -44,7 +44,9 @@ class Network(L.LightningModule):
         ]
         self.metrics = Metrics(num_classes=19, class_names=self.class_names)
 
-        self.mAP = MeanAveragePrecision()
+        self.mAP = MeanAveragePrecision(class_metrics=True, iou_thresholds=[0.5]).cuda(
+            device=1
+        )
 
     def training_step(self, batch):
         preds = self.model(batch[0])
@@ -122,6 +124,17 @@ class Network(L.LightningModule):
             batch_size=1,
         )
 
+        self.log(
+            "val_mAP",
+            mAP["map_50"],
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+            logger=True,
+            sync_dist=True,
+            batch_size=1,
+        )
+
         self.print(f"\n\n{self.metrics}\n{mAP}\n\n")
 
     def lr_scheduler_step(self, scheduler, metric):
@@ -131,12 +144,12 @@ class Network(L.LightningModule):
         # return torch.optim.Adam(self.parameters(), lr=0.045, weight_decay=0.0005)
         optimizer = AdaBelief(self.parameters(), lr=0.001, weight_decay=0.0005)
 
-        scheduler = CosineAnnealingWarmRestarts(
-            optimizer, T_0=10_000, T_mult=1, eta_min=1e-6
-        )
+        # scheduler = CosineAnnealingWarmRestarts(
+        #     optimizer, T_0=10_000, T_mult=1, eta_min=1e-6
+        # )
 
         # scheduler = PolyLRScheduler(optimizer, t_initial=100, lr_min=1e-6, power=0.9)
-        # scheduler = PolynomialLR(optimizer, total_iters=120_000, power=0.9)
+        scheduler = PolynomialLR(optimizer, total_iters=240_000, power=0.9)
 
         return {
             "optimizer": optimizer,
@@ -172,9 +185,10 @@ class Network(L.LightningModule):
             wh = regression[batch_idx][:, ys, xs]
             half_w, half_h = wh[0] / 2, wh[1] / 2
 
-            bboxes = torch.stack(
-                [xs - half_w, ys - half_h, xs + half_w, ys + half_h], dim=1
-            ) * 4
+            bboxes = (
+                torch.stack([xs - half_w, ys - half_h, xs + half_w, ys + half_h], dim=1)
+                * 4
+            )
 
             detections.append([bboxes, scores, labels])
 
@@ -188,7 +202,9 @@ def main():
     dm = CityscapesDataModule()
     dm.setup()
 
-    logger = L.pytorch.loggers.TensorBoardLogger(save_dir="logs", name="cityscapes")
+    logger = L.pytorch.loggers.TensorBoardLogger(
+        save_dir="logs", name="cityscapes_bs8_b48_h128"
+    )
 
     model = Network()
     trainer = L.Trainer(
@@ -198,7 +214,7 @@ def main():
         logger=logger,
         precision="16-mixed",
         # max_epochs=100,
-        max_steps=120_000,
+        max_steps=240_000,
         # callbacks=[
         #     L.pytorch.callbacks.early_stopping.EarlyStopping(
         #         monitor="val_loss", mode="min"
@@ -209,7 +225,7 @@ def main():
         enable_model_summary=True,
         check_val_every_n_epoch=5,
         # log_every_n_steps=10,
-        sync_batchnorm=False,
+        sync_batchnorm=True,
         default_root_dir="checkpoints",
     )
 
