@@ -205,6 +205,7 @@ class CityscapesDataset(Dataset):
         image, bboxes, labels, mask = self._transforms(image, bboxes, labels, mask)
 
         if not bboxes:
+            index = np.random.randint(0, self.__len__())
             image, mask, bboxes, labels, center_heatmaps, info = self.__getitem__(index)
             return image, mask, bboxes, labels, center_heatmaps, info
 

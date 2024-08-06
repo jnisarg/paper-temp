@@ -51,7 +51,7 @@ class Network(L.LightningModule):
     def __init__(self):
         super().__init__()
         self.model = Model(enc_planes=48, enc_ppm_planes=128, head_planes=256)
-        self.criterion = Criterion(self.trainer.global_step)
+        self.criterion = Criterion()
 
         self.class_names = [
             "road",
@@ -91,7 +91,7 @@ class Network(L.LightningModule):
             unfreeze_sd(self.model)
 
         preds = self.model(batch[0])
-        loss = self.criterion(preds, batch)
+        loss = self.criterion(preds, batch, self.trainer.global_step)
 
         self.log(
             "train_loss",

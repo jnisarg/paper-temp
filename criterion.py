@@ -5,13 +5,11 @@ import torch.nn.functional as F
 
 class Criterion(nn.Module):
 
-    def __init__(self, global_step):
+    def __init__(self):
         super().__init__()
 
         self.thresh = -torch.log(torch.tensor(0.8, dtype=torch.float))
         self.ignore_index = 255
-
-        self.global_step = global_step
 
     def _ohem_loss(self, pred, target):
         n_min = target[target != self.ignore_index].numel() // 16
@@ -60,18 +58,18 @@ class Criterion(nn.Module):
 
         return loss
 
-    def forward(self, preds, targets):
+    def forward(self, preds, targets, global_step=None):
         classifier, compression3, centerness, regression = preds
         images, masks, bboxes, labels, heatmaps, infos = targets
 
-        if self.self.global_step > 150_000 and self.global_step <= 270_000:
+        if global_step is not None and global_step > 150_000 and global_step <= 270_000:
             classifier_loss = 0.0
         else:
             classifier_loss = self._ohem_loss(
                 classifier, masks
             ) + 0.4 * self._ohem_loss(compression3, masks)
 
-        if self.global_step > 30_000 and self.global_step <= 150_000:
+        if global_step is not None and global_step > 30_000 and global_step <= 150_000:
             localization_loss = 0.0
         else:
             target_nonpad_mask = labels.gt(-1)
