@@ -59,7 +59,7 @@ class Criterion(nn.Module):
 
     def _focal_loss(self, pred, target):
         # Compute the binary cross entropy loss
-        BCE_loss = F.binary_cross_entropy(pred, target, reduction="none")
+        BCE_loss = F.binary_cross_entropy_with_logits(pred, target, reduction="none")
 
         # Compute the probability of the positive class
         pt = torch.exp(-BCE_loss)
@@ -70,16 +70,16 @@ class Criterion(nn.Module):
         return F_loss.mean()
 
     def forward(self, outputs, targets):
-        if len(targets) == 3:
+        if len(outputs) == 3:
             classification, centerness, regression = outputs
-        elif len(targets) == 4:
+        elif len(outputs) == 4:
             classification, aux_classification, centerness, regression = outputs
         else:
             raise NotImplementedError("The number of targets should be either 3 or 4.")
 
         images, masks, bboxes, labels, bbox_center_heatmaps, infos = targets
 
-        if len(targets) == 4:
+        if len(outputs) == 4:
             classification_loss = (
                 self._ohem_loss(classification, masks)
                 + self._ohem_loss(aux_classification, masks)
