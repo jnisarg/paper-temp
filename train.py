@@ -17,7 +17,7 @@ def train(
     ohem_ratio=0.7,
     n_min_divisor=16,
     ignore_index=255,
-    focal_alpha=0.75,
+    focal_alpha=0.25,
     focal_gamma=2,
     bbox_loss="smooth_l1",
     classification_loss_weight=1.0,
@@ -42,7 +42,7 @@ def train(
     test_batch_size=1,
     num_workers=8,
     precision="16-mixed",
-    max_steps=120_000,
+    max_steps=120_250,
 ):
 
     dm = CityscapesDataModule(
