@@ -70,30 +70,24 @@ class Criterion(nn.Module):
         return F_loss.mean()
 
     def forward(self, outputs, targets):
-        # if len(outputs) == 3:
-        #     classification, centerness, regression = outputs
-        # elif len(outputs) == 4:
-        #     classification, aux_classification, centerness, regression = outputs
-        # else:
-        #     raise NotImplementedError("The number of targets should be either 3 or 4.")
-
-        classification, centerness, regression = outputs
+        if len(outputs) == 3:
+            classification, centerness, regression = outputs
+        elif len(outputs) == 4:
+            classification, aux_classification, centerness, regression = outputs
+        else:
+            raise NotImplementedError("The number of targets should be either 3 or 4.")
 
         images, masks, bboxes, labels, bbox_center_heatmaps, infos = targets
 
-        # if len(outputs) == 4:
-        #     classification_loss = (
-        #         self._ohem_loss(classification, masks)
-        #         + self._ohem_loss(aux_classification, masks)
-        #     ) * self.classification_loss_weight
-        # else:
-        #     classification_loss = (
-        #         self._ohem_loss(classification, masks) * self.classification_loss_weight
-        #     )
-
-        classification_loss = (
-            self._ohem_loss(classification, masks) * self.classification_loss_weight
-        )
+        if len(outputs) == 4:
+            classification_loss = (
+                self._ohem_loss(classification, masks)
+                + self._ohem_loss(aux_classification, masks)
+            ) * self.classification_loss_weight
+        else:
+            classification_loss = (
+                self._ohem_loss(classification, masks) * self.classification_loss_weight
+            )
 
         centerness_loss = (
             self._focal_loss(centerness, bbox_center_heatmaps)

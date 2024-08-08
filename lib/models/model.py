@@ -217,17 +217,7 @@ class Encoder(nn.Module):
 
         self.ppm = PPM(self.planes * 16, self.ppm_planes, self.planes * 4)
 
-        self.out_channels = (
-            self.planes * 4,
-            self.planes * 4,
-            self.planes * 2,
-            [
-                self.planes,
-                self.planes * 2,
-                self.planes * 4,
-                self.planes * 8,
-            ],
-        )
+        self.out_channels = (self.planes * 4, self.planes * 4, self.planes * 2)
 
     def _make_layer(self, block, in_channels, out_channels, blocks, stride):
         downsample = None
@@ -283,108 +273,13 @@ class Encoder(nn.Module):
         context5 = self.context5(down4)
         detail5 = self.detail5(compression4)
 
-        # ppm = F.interpolate(
-        #     self.ppm(context5), scale_factor=8, mode="bilinear", align_corners=False
-        # )
-
-        ppm = self.ppm(context5)
-
-        return (
-            ppm,
-            detail5,
-            compression3,
-            [layer1, layer2, context3, context4],
-        )
-
-
-class Neck(nn.Module):
-    def __init__(self, in_channels, fpn_channels):
-        super().__init__()
-
-        (
-            self.layer1_channels,
-            self.layer2_channels,
-            self.context3_channels,
-            self.context4_channels,
-        ) = in_channels
-
-        self.fpn_channels = fpn_channels
-
-        self.context4 = ConvBNReLU(
-            self.context4_channels, self.fpn_channels, kernel_size=3
-        )
-        self.context3 = ConvBNReLU(
-            self.context3_channels, self.fpn_channels, kernel_size=3
-        )
-
-        self.layer2 = ConvBNReLU(self.layer2_channels, self.fpn_channels, kernel_size=3)
-        self.layer1 = ConvBNReLU(self.layer1_channels, self.fpn_channels, kernel_size=3)
-
-    def freeze_weights(self):
-        for param in self.parameters():
-            param.requires_grad = False
-
-    def unfreeze_weights(self):
-        for param in self.parameters():
-            param.requires_grad = True
-
-    def forward(self, ppm, detail5, context4, context3, layer2, layer1):
         ppm = F.interpolate(
-            ppm,
-            scale_factor=2,
-            mode="bilinear",
-            align_corners=False,
-        )
-        context4 = F.interpolate(
-            self.context4(context4) + ppm,
-            scale_factor=2,
-            mode="bilinear",
-            align_corners=False,
-        )
-        context3 = F.interpolate(
-            self.context3(context3) + context4,
-            scale_factor=2,
-            mode="bilinear",
-            align_corners=False,
+            self.ppm(context5), scale_factor=8, mode="bilinear", align_corners=False
         )
 
-        layer2 = F.interpolate(
-            self.layer2(layer2) + context3 + detail5,
-            scale_factor=2,
-            mode="bilinear",
-            align_corners=False,
-        )
-        layer1 = self.layer1(layer1) + layer2
+        # ppm = self.ppm(context5)
 
-        return layer1
-
-
-class MTLHead(nn.Module):
-    def __init__(
-        self, in_channels, head_channels, classification_classes, localization_classes
-    ):
-        super().__init__()
-
-        self.in_channels = in_channels
-        self.head_channels = head_channels
-
-        self.classification_classes = classification_classes
-        self.localization_classes = localization_classes
-
-        self.conv = ConvBNReLU(in_channels, head_channels, kernel_size=3)
-
-        self.classifier = nn.Conv2d(
-            head_channels, self.classification_classes, kernel_size=1
-        )
-        self.centerness = nn.Conv2d(
-            head_channels, self.localization_classes, kernel_size=1
-        )
-        self.regression = nn.Conv2d(head_channels, 2, kernel_size=1)
-
-    def forward(self, x):
-        x = self.conv(x)
-
-        return self.classifier(x), self.centerness(x), self.regression(x)
+        return (ppm, detail5, compression3)
 
 
 class ClassificationHead(nn.Module):
@@ -463,30 +358,22 @@ class Model(nn.Module):
         self.head_planes = head_planes
 
         self.encoder = Encoder(self.encoder_init_planes, self.encoder_ppm_planes)
-        self.neck = Neck(self.encoder.out_channels[-1], self.encoder.out_channels[1])
 
-        # self.classification_head = ClassificationHead(
-        #     self.encoder.out_channels[1], self.head_planes, self.classification_classes
-        # )
+        self.classification_head = ClassificationHead(
+            self.encoder.out_channels[0], self.head_planes, self.classification_classes
+        )
 
-        # if self.training:
-        #     self.classfication_aux_head = ClassificationHead(
-        #         self.encoder.out_channels[2],
-        #         self.head_planes,
-        #         self.classification_classes,
-        #     )
+        if self.training:
+            self.classfication_aux_head = ClassificationHead(
+                self.encoder.out_channels[2],
+                self.head_planes,
+                self.classification_classes,
+            )
 
-        # self.localization_head = LocalizationHead(
-        #     self.encoder.out_channels[1],
-        #     self.head_planes,
-        #     localization_classes,
-        # )
-
-        self.mtl_head = MTLHead(
+        self.localization_head = LocalizationHead(
             self.encoder.out_channels[1],
             self.head_planes,
-            self.classification_classes,
-            self.localization_classes,
+            localization_classes,
         )
 
     def postprocess(
@@ -534,38 +421,27 @@ class Model(nn.Module):
         return batch_mask, detections
 
     def forward(self, x):
-        ppm, detail5, compression3, [layer1, layer2, context3, context4] = self.encoder(
-            x
-        )
+        ppm, detail5, compression3 = self.encoder(x)
 
-        neck = self.neck(ppm, detail5, context4, context3, layer2, layer1)
-
-        # classfication = F.interpolate(
-        #     self.classification_head(neck),
-        #     scale_factor=4,
-        #     mode="bilinear",
-        #     align_corners=False,
-        # )
-        # centerness, regression = self.localization_head(neck)
-
-        # if self.training:
-        #     classfication_aux = F.interpolate(
-        #         self.classfication_aux_head(compression3),
-        #         scale_factor=8,
-        #         mode="bilinear",
-        #         align_corners=False,
-        #     )
-
-        #     return classfication, classfication_aux, centerness, regression
-
-        classification, centerness, regression = self.mtl_head(neck)
-
-        classification = F.interpolate(
-            classification,
-            scale_factor=4,
+        classfication = F.interpolate(
+            self.classification_head(ppm + detail5),
+            scale_factor=8,
             mode="bilinear",
             align_corners=False,
         )
+        centerness, regression = self.localization_head(
+            F.interpolate(detail5, scale_factor=2, mode="bilinear", align_corners=False)
+        )
+
+        if self.training:
+            classfication_aux = F.interpolate(
+                self.classfication_aux_head(compression3),
+                scale_factor=8,
+                mode="bilinear",
+                align_corners=False,
+            )
+
+            return classfication, classfication_aux, centerness, regression
 
         return classification, centerness, regression
 
