@@ -106,13 +106,15 @@ class Criterion(nn.Module):
             batch_regression = regression[idx, :, ct_int[:, 1], ct_int[:, 0]].view(-1)
             batch_bboxes = bboxes[idx][target_nonpad_mask[idx]]
 
-            wh = torch.stack(
-                [
-                    batch_bboxes[:, 2] - batch_bboxes[:, 0],
-                    batch_bboxes[:, 3] - batch_bboxes[:, 1],
-                ]
+            wh = (
+                torch.stack(
+                    [
+                        batch_bboxes[:, 2] - batch_bboxes[:, 0],
+                        batch_bboxes[:, 3] - batch_bboxes[:, 1],
+                    ]
+                )
                 / infos[idx]["bbox_down_stride"]
-            )
+            ).view(-1)
 
             regression_loss += self.bbox_loss(batch_regression, wh, reduction="sum")
 

@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -472,12 +473,10 @@ class Model(nn.Module):
 
         batch, _, height, width = centerness.shape
 
-        batch_bboxes = []
-        batch_scores = []
-        batch_labels = []
+        detections = []
 
         for idx in range(batch):
-            scores, indices = torch.topk(classfication[idx].view(-1), k=topK)
+            scores, indices = torch.topk(centerness[idx].view(-1), k=topK)
             scores = scores[scores >= conf_th]
 
             indices = indices[: len(scores)]
@@ -495,26 +494,24 @@ class Model(nn.Module):
                 * bbox_down_stride
             )
 
-            batch_bboxes.append(bboxes)
-            batch_scores.append(scores)
-            batch_labels.append(labels)
+            detections.append((bboxes, scores, labels))
 
-        return batch_mask, batch_bboxes, batch_scores, batch_labels
+        return batch_mask, detections
 
     def forward(self, x):
-        ppm, detail5, compression3, [layer1, layer2, context3, context4, context5] = (
-            self.encoder(x)
+        ppm, detail5, compression3, [layer1, layer2, context3, context4] = self.encoder(
+            x
         )
 
+        neck = self.neck(ppm, detail5, context4, context3, layer2, layer1)
+
         classfication = F.interpolate(
-            self.classification_head(ppm + detail5),
-            scale_factor=8,
+            self.classification_head(neck),
+            scale_factor=4,
             mode="bilinear",
             align_corners=False,
         )
-        centerness, regression = self.localization_head(
-            detail5, context5, context4, context3, layer2, layer1
-        )
+        centerness, regression = self.localization_head(neck)
 
         if self.training:
             classfication_aux = F.interpolate(
@@ -530,7 +527,6 @@ class Model(nn.Module):
 
 
 if __name__ == "__main__":
-    import torch
 
     model = Model(
         classification_classes=14,
