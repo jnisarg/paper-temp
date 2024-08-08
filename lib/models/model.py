@@ -359,6 +359,34 @@ class Neck(nn.Module):
         return layer1
 
 
+class MTLHead(nn.Module):
+    def __init__(
+        self, in_channels, head_channels, classification_classes, localization_classes
+    ):
+        super().__init__()
+
+        self.in_channels = in_channels
+        self.head_channels = head_channels
+
+        self.classification_classes = classification_classes
+        self.localization_classes = localization_classes
+
+        self.conv = ConvBNReLU(in_channels, head_channels, kernel_size=3)
+
+        self.classifier = nn.Conv2d(
+            head_channels, self.classification_classes, kernel_size=1
+        )
+        self.centerness = nn.Conv2d(
+            head_channels, self.localization_classes, kernel_size=1
+        )
+        self.regression = nn.Conv2d(head_channels, 2, kernel_size=1)
+
+    def forward(self, x):
+        x = self.conv(x)
+
+        return self.classifier(x), self.centerness(x), self.regression(x)
+
+
 class ClassificationHead(nn.Module):
     def __init__(self, in_channels, head_channels, num_classes):
         super().__init__()
@@ -437,21 +465,28 @@ class Model(nn.Module):
         self.encoder = Encoder(self.encoder_init_planes, self.encoder_ppm_planes)
         self.neck = Neck(self.encoder.out_channels[-1], self.encoder.out_channels[1])
 
-        self.classification_head = ClassificationHead(
-            self.encoder.out_channels[1], self.head_planes, self.classification_classes
-        )
+        # self.classification_head = ClassificationHead(
+        #     self.encoder.out_channels[1], self.head_planes, self.classification_classes
+        # )
 
-        if self.training:
-            self.classfication_aux_head = ClassificationHead(
-                self.encoder.out_channels[2],
-                self.head_planes,
-                self.classification_classes,
-            )
+        # if self.training:
+        #     self.classfication_aux_head = ClassificationHead(
+        #         self.encoder.out_channels[2],
+        #         self.head_planes,
+        #         self.classification_classes,
+        #     )
 
-        self.localization_head = LocalizationHead(
+        # self.localization_head = LocalizationHead(
+        #     self.encoder.out_channels[1],
+        #     self.head_planes,
+        #     localization_classes,
+        # )
+
+        self.mtl_head = MTLHead(
             self.encoder.out_channels[1],
             self.head_planes,
-            localization_classes,
+            self.classification_classes,
+            self.localization_classes,
         )
 
     def postprocess(
@@ -505,25 +540,34 @@ class Model(nn.Module):
 
         neck = self.neck(ppm, detail5, context4, context3, layer2, layer1)
 
-        classfication = F.interpolate(
-            self.classification_head(neck),
+        # classfication = F.interpolate(
+        #     self.classification_head(neck),
+        #     scale_factor=4,
+        #     mode="bilinear",
+        #     align_corners=False,
+        # )
+        # centerness, regression = self.localization_head(neck)
+
+        # if self.training:
+        #     classfication_aux = F.interpolate(
+        #         self.classfication_aux_head(compression3),
+        #         scale_factor=8,
+        #         mode="bilinear",
+        #         align_corners=False,
+        #     )
+
+        #     return classfication, classfication_aux, centerness, regression
+
+        classification, centerness, regression = self.mtl_head(neck)
+
+        classification = F.interpolate(
+            classification,
             scale_factor=4,
             mode="bilinear",
             align_corners=False,
         )
-        centerness, regression = self.localization_head(neck)
 
-        if self.training:
-            classfication_aux = F.interpolate(
-                self.classfication_aux_head(compression3),
-                scale_factor=8,
-                mode="bilinear",
-                align_corners=False,
-            )
-
-            return classfication, classfication_aux, centerness, regression
-
-        return classfication, centerness, regression
+        return classification, centerness, regression
 
 
 if __name__ == "__main__":
