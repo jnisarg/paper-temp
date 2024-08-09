@@ -13,7 +13,7 @@ def train(
     save_dir="exp",
     encoder_init_planes=32,
     encoder_ppm_planes=128,
-    head_planes=256,
+    head_planes=64,
     ohem_ratio=0.7,
     n_min_divisor=16,
     ignore_index=255,
@@ -118,4 +118,4 @@ def train(
 
 
 if __name__ == "__main__":
-    train(exp_name="cityscapes_default_exp0")
+    train(exp_name="cityscapes_default_v4_exp0")

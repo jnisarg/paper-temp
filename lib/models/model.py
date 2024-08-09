@@ -315,14 +315,9 @@ class LocalizationHead(nn.Module):
         self.head_channels = head_channels
         self.num_classes = num_classes
 
-        self.centerness = nn.Sequential(
+        self.localizer = nn.Sequential(
             ConvBNReLU(self.in_channels, self.head_channels, kernel_size=3),
-            nn.Conv2d(self.head_channels, self.num_classes, kernel_size=1),
-        )
-
-        self.regression = nn.Sequential(
-            ConvBNReLU(self.in_channels, self.head_channels, kernel_size=3),
-            nn.Conv2d(self.head_channels, 2, kernel_size=1),
+            nn.Conv2d(self.head_channels, 3, kernel_size=1),
         )
 
     def freeze_weights(self):
@@ -334,10 +329,9 @@ class LocalizationHead(nn.Module):
             param.requires_grad = True
 
     def forward(self, x):
-        centerness = self.centerness(x)
-        regression = self.regression(x)
+        localization = self.localizer(x)
 
-        return centerness, regression
+        return localization
 
 
 class Model(nn.Module):
@@ -379,13 +373,14 @@ class Model(nn.Module):
     def postprocess(
         self,
         classfication,
-        centerness,
-        regression,
+        localization,
         bbox_down_stride=1,
         conf_th=0.3,
         topK=100,
     ):
         batch_mask = torch.argmax(classfication, dim=1)
+
+        centerness, regression = localization[:, 0, :, :], localization[:, 1:, :, :]
 
         centerness = centerness.sigmoid()
 
@@ -393,7 +388,7 @@ class Model(nn.Module):
         center_mask = (centerness == center_pool).float()
         centerness = centerness * center_mask
 
-        batch, _, height, width = centerness.shape
+        batch, height, width = centerness.shape
 
         detections = []
 
@@ -416,6 +411,14 @@ class Model(nn.Module):
                 * bbox_down_stride
             )
 
+            # labels = batch_mask[idx][ys, xs]
+            # if labels.item() < 11:
+            #     continue
+            # else:
+            #     labels = labels - 11
+
+            print(labels)
+
             detections.append((bboxes, scores, labels))
 
         return batch_mask, detections
@@ -423,13 +426,13 @@ class Model(nn.Module):
     def forward(self, x):
         ppm, detail5, compression3 = self.encoder(x)
 
-        classfication = F.interpolate(
+        classification = F.interpolate(
             self.classification_head(ppm + detail5),
             scale_factor=8,
             mode="bilinear",
             align_corners=False,
         )
-        centerness, regression = self.localization_head(
+        localization = self.localization_head(
             F.interpolate(detail5, scale_factor=2, mode="bilinear", align_corners=False)
         )
 
@@ -441,9 +444,9 @@ class Model(nn.Module):
                 align_corners=False,
             )
 
-            return classfication, classfication_aux, centerness, regression
+            return classification, classfication_aux, localization
 
-        return classification, centerness, regression
+        return classification, localization
 
 
 if __name__ == "__main__":
@@ -460,11 +463,10 @@ if __name__ == "__main__":
 
     sample = torch.randn(1, 3, 384, 768).cuda()
 
-    classification, centerness, regression = model(sample)
+    classification, localization = model(sample)
 
     print(classification.shape)
-    print(centerness.shape)
-    print(regression.shape)
+    print(localization.shape)
 
     parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
 

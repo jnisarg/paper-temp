@@ -133,7 +133,7 @@ class CityscapesDataset(Dataset):
         ]
 
         self.localization_class_names = [
-            "person",
+            "ped",
             # "rider",
             "car",
             # "truck",
@@ -240,7 +240,8 @@ class CityscapesDataset(Dataset):
 
         bbox_centers_heatmaps = np.zeros(
             (
-                len(self.localization_class_names),
+                # len(self.localization_class_names),
+                1,
                 image.shape[0] // self.bbox_down_stride,
                 image.shape[1] // self.bbox_down_stride,
             ),
@@ -248,6 +249,8 @@ class CityscapesDataset(Dataset):
         )
 
         object_mask = torch.ones(len(labels))
+
+        # print(bboxes_height.shape, bboxes_width.shape)
 
         for idx, label in enumerate(labels):
             radius = max(
@@ -267,14 +270,9 @@ class CityscapesDataset(Dataset):
                 object_mask[idx] = 0
                 continue
 
-            self.draw_umich_gaussian(
-                bbox_centers_heatmaps[label], bbox_centers_int, radius
-            )
+            self.draw_umich_gaussian(bbox_centers_heatmaps[0], bbox_centers_int, radius)
 
-            if (
-                bbox_centers_heatmaps[label, bbox_centers_int[1], bbox_centers_int[0]]
-                != 1
-            ):
+            if bbox_centers_heatmaps[0, bbox_centers_int[1], bbox_centers_int[0]] != 1:
                 object_mask[idx] = 0
 
         bbox_centers_heatmaps = torch.from_numpy(bbox_centers_heatmaps)
