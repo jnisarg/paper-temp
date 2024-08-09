@@ -372,18 +372,18 @@ class Model(nn.Module):
         ppm, detail5, compression3 = self.encoder(x)
 
         classification = F.interpolate(
-            self.classification_head(ppm + detail5),
+            self.classification(ppm + detail5),
             scale_factor=8,
             mode="bilinear",
             align_corners=False,
         )
-        localization = self.localization_head(
+        localization = self.localization(
             F.interpolate(detail5, scale_factor=2, mode="bilinear", align_corners=False)
         )
 
         if self.training:
             classfication_aux = F.interpolate(
-                self.classfication_aux_head(compression3),
+                self.aux_classification(compression3),
                 scale_factor=8,
                 mode="bilinear",
                 align_corners=False,
