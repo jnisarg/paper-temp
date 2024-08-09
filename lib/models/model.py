@@ -277,61 +277,7 @@ class Encoder(nn.Module):
             self.ppm(context5), scale_factor=8, mode="bilinear", align_corners=False
         )
 
-        # ppm = self.ppm(context5)
-
         return (ppm, detail5, compression3)
-
-
-class ClassificationHead(nn.Module):
-    def __init__(self, in_channels, head_channels, num_classes):
-        super().__init__()
-
-        self.in_channels = in_channels
-        self.head_channels = head_channels
-        self.num_classes = num_classes
-
-        self.classifier = nn.Sequential(
-            ConvBNReLU(in_channels, head_channels, kernel_size=3),
-            nn.Conv2d(head_channels, num_classes, kernel_size=1),
-        )
-
-    def freeze_weights(self):
-        for param in self.parameters():
-            param.requires_grad = False
-
-    def unfreeze_weights(self):
-        for param in self.parameters():
-            param.requires_grad = True
-
-    def forward(self, x):
-        return self.classifier(x)
-
-
-class LocalizationHead(nn.Module):
-    def __init__(self, in_channels, head_channels, num_classes):
-        super().__init__()
-
-        self.in_channels = in_channels
-        self.head_channels = head_channels
-        self.num_classes = num_classes
-
-        self.localizer = nn.Sequential(
-            ConvBNReLU(self.in_channels, self.head_channels, kernel_size=3),
-            nn.Conv2d(self.head_channels, 3, kernel_size=1),
-        )
-
-    def freeze_weights(self):
-        for param in self.parameters():
-            param.requires_grad = False
-
-    def unfreeze_weights(self):
-        for param in self.parameters():
-            param.requires_grad = True
-
-    def forward(self, x):
-        localization = self.localizer(x)
-
-        return localization
 
 
 class Model(nn.Module):
@@ -353,22 +299,21 @@ class Model(nn.Module):
 
         self.encoder = Encoder(self.encoder_init_planes, self.encoder_ppm_planes)
 
-        self.classification_head = ClassificationHead(
-            self.encoder.out_channels[0], self.head_planes, self.classification_classes
+        self.classification = nn.Sequential(
+            ConvBNReLU(self.encoder.out_channels[0], self.head_planes, 3, 1),
+            nn.Conv2d(self.head_planes, self.classification_classes, 1),
+        )
+
+        self.localization = nn.Sequential(
+            ConvBNReLU(self.encoder.out_channels[1], self.head_planes * 2, 3, 1),
+            nn.Conv2d(self.head_planes * 2, 3, 1),
         )
 
         if self.training:
-            self.classfication_aux_head = ClassificationHead(
-                self.encoder.out_channels[2],
-                self.head_planes,
-                self.classification_classes,
+            self.aux_classification = nn.Sequential(
+                ConvBNReLU(self.encoder.out_channels[2], self.head_planes, 3, 1),
+                nn.Conv2d(self.head_planes, self.classification_classes, 1),
             )
-
-        self.localization_head = LocalizationHead(
-            self.encoder.out_channels[1],
-            self.head_planes,
-            localization_classes,
-        )
 
     def postprocess(
         self,
@@ -397,8 +342,6 @@ class Model(nn.Module):
             scores = scores[scores >= conf_th]
 
             indices = indices[: len(scores)]
-
-            labels = indices // (height * width)
             indices = indices % (height * width)
 
             xs, ys = (indices % width).int(), indices // width
@@ -411,13 +354,15 @@ class Model(nn.Module):
                 * bbox_down_stride
             )
 
-            # labels = batch_mask[idx][ys, xs]
-            # if labels.item() < 11:
-            #     continue
-            # else:
-            #     labels = labels - 11
+            labels = (
+                self.classification_classes - self.localization_classes
+            ) - batch_mask[idx][ys * bbox_down_stride, xs * bbox_down_stride].int()
 
-            print(labels)
+            mask = labels >= 0
+
+            bboxes = bboxes[mask]
+            scores = scores[mask]
+            labels = labels[mask]
 
             detections.append((bboxes, scores, labels))
 

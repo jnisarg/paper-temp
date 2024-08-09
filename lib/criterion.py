@@ -83,10 +83,10 @@ class Criterion(nn.Module):
 
         images, masks, bboxes, labels, bbox_center_heatmaps, infos = targets
 
-        if len(outputs) == 4:
+        if len(outputs) == 3:
             classification_loss = (
                 self._ohem_loss(classification, masks)
-                + self._ohem_loss(aux_classification, masks)
+                + (self._ohem_loss(aux_classification, masks) * 0.4)
             ) * self.classification_loss_weight
         else:
             classification_loss = (
@@ -94,7 +94,7 @@ class Criterion(nn.Module):
             )
 
         centerness_loss = (
-            self._focal_loss(centerness, bbox_center_heatmaps)
+            self._focal_loss(centerness.squeeze(), bbox_center_heatmaps.squeeze())
             * self.centerness_loss_weight
         )
         regression_loss = centerness_loss.new_tensor(0.0)

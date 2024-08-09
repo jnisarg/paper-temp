@@ -123,23 +123,23 @@ class CityscapesDataset(Dataset):
             "terrain",
             "sky",
             "person",
-            # "rider",
+            "rider",
             "car",
-            # "truck",
-            # "bus",
-            # "train",
-            # "motorcycle",
+            "truck",
+            "bus",
+            "train",
+            "motorcycle",
             "bicycle",
         ]
 
         self.localization_class_names = [
-            "ped",
-            # "rider",
+            "person",
+            "rider",
             "car",
-            # "truck",
-            # "bus",
-            # "train",
-            # "motorcycle",
+            "truck",
+            "bus",
+            "train",
+            "motorcycle",
             "bicycle",
         ]
 
@@ -156,13 +156,13 @@ class CityscapesDataset(Dataset):
             9: [152, 251, 152],
             10: [70, 130, 180],
             11: [220, 20, 60],
-            # 12: [255, 0, 0],
-            12: [0, 0, 142],
-            # 14: [0, 0, 70],
-            # 15: [0, 60, 100],
-            # 16: [0, 80, 100],
-            # 17: [0, 0, 230],
-            13: [119, 11, 32],
+            12: [255, 0, 0],
+            123: [0, 0, 142],
+            14: [0, 0, 70],
+            15: [0, 60, 100],
+            16: [0, 80, 100],
+            17: [0, 0, 230],
+            18: [119, 11, 32],
             255: [0, 0, 0],
         }
 
@@ -240,8 +240,6 @@ class CityscapesDataset(Dataset):
 
         bbox_centers_heatmaps = np.zeros(
             (
-                # len(self.localization_class_names),
-                1,
                 image.shape[0] // self.bbox_down_stride,
                 image.shape[1] // self.bbox_down_stride,
             ),
@@ -250,9 +248,7 @@ class CityscapesDataset(Dataset):
 
         object_mask = torch.ones(len(labels))
 
-        # print(bboxes_height.shape, bboxes_width.shape)
-
-        for idx, label in enumerate(labels):
+        for idx in range(len(labels)):
             radius = max(
                 0,
                 int(
@@ -265,14 +261,14 @@ class CityscapesDataset(Dataset):
             bbox_centers_int = bbox_centers[idx].astype(np.int32)
 
             if (
-                bbox_centers_heatmaps[:, bbox_centers_int[1], bbox_centers_int[0]] == 1
+                bbox_centers_heatmaps[bbox_centers_int[1], bbox_centers_int[0]] == 1
             ).sum() >= 1.0:
                 object_mask[idx] = 0
                 continue
 
-            self.draw_umich_gaussian(bbox_centers_heatmaps[0], bbox_centers_int, radius)
+            self.draw_umich_gaussian(bbox_centers_heatmaps, bbox_centers_int, radius)
 
-            if bbox_centers_heatmaps[0, bbox_centers_int[1], bbox_centers_int[0]] != 1:
+            if bbox_centers_heatmaps[bbox_centers_int[1], bbox_centers_int[0]] != 1:
                 object_mask[idx] = 0
 
         bbox_centers_heatmaps = torch.from_numpy(bbox_centers_heatmaps)
@@ -305,15 +301,6 @@ class CityscapesDataset(Dataset):
 
         for line in lines:
             label_id, x1, y1, x2, y2 = map(int, line.split())
-
-            if label_id in [0, 1]:
-                label_id = 0
-            elif label_id in [2, 3, 4]:
-                label_id = 1
-            elif label_id in [6, 7]:
-                label_id = 2
-            else:
-                continue
 
             bboxes.append([x1, y1, x2, y2])
             labels.append(label_id)
@@ -368,15 +355,15 @@ class CityscapesDataset(Dataset):
             22: 9,
             23: 10,
             24: 11,
-            25: 11,
-            26: 12,
-            27: 12,
-            28: 12,
+            25: 12,
+            26: 13,
+            27: 14,
+            28: 15,
             29: self.ignore_index,
             30: self.ignore_index,
-            31: self.ignore_index,
-            32: 13,
-            33: 13,
+            31: 16,
+            32: 17,
+            33: 18,
         }
 
     def collate_fn(self, batch):

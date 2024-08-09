@@ -14,13 +14,13 @@ def train(
     encoder_init_planes=32,
     encoder_ppm_planes=128,
     head_planes=64,
-    ohem_ratio=0.7,
+    ohem_ratio=0.9,
     n_min_divisor=16,
     ignore_index=255,
     focal_alpha=0.75,
     focal_gamma=2,
     bbox_loss="smooth_l1",
-    classification_loss_weight=15.0,
+    classification_loss_weight=30.0,
     centerness_loss_weight=100.0,
     bbox_loss_weight=0.4,
     localization_loss_weight=1.0,
@@ -37,7 +37,7 @@ def train(
     bbox_down_stride=4,
     bbox_format="pascal_voc",
     transforms_kwargs={},
-    eval_transforms_kwargs={"min_area": 300},
+    eval_transforms_kwargs={"min_area": 384},
     train_batch_size=4,
     test_batch_size=1,
     num_workers=8,
@@ -118,4 +118,4 @@ def train(
 
 
 if __name__ == "__main__":
-    train(exp_name="cityscapes_default_v4_exp0")
+    train(exp_name="cityscapes_v4_exp0")
